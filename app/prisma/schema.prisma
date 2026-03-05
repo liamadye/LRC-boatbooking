@@ -90,6 +90,7 @@ model User {
   bookings             Booking[]
   blackBoatApplications BlackBoatApplication[] @relation("Applicant")
   reviewedApplications  BlackBoatApplication[] @relation("Reviewer")
+  sentInvitations      Invitation[]           @relation("Inviter")
 
   @@map("users")
 }
@@ -212,6 +213,24 @@ model BookingWeek {
   createdAt   DateTime  @default(now()) @map("created_at")
 
   @@map("booking_weeks")
+}
+
+// ─── Invitations ───────────────────────────────────────────────
+
+model Invitation {
+  id          String          @id @default(uuid())
+  email       String
+  token       String          @unique @default(uuid())
+  role        UserRole        @default(member)
+  memberType  MemberType      @default(recreational) @map("member_type")
+  invitedBy   String          @map("invited_by")
+  acceptedAt  DateTime?       @map("accepted_at")
+  expiresAt   DateTime        @map("expires_at")
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  inviter User @relation("Inviter", fields: [invitedBy], references: [id])
+
+  @@map("invitations")
 }
 
 // ─── Black Boat Applications ────────────────────────────────────

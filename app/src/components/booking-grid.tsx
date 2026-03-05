@@ -4,6 +4,8 @@ import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { TIME_SLOTS, BOAT_SECTIONS, SECTION_COLORS } from "@/lib/constants";
 import { BookingModal } from "@/components/booking-modal";
+import { BookingDetailPopover } from "@/components/booking-detail-popover";
+import { MobileBookingView } from "@/components/mobile-booking-view";
 import { TotalsBar } from "@/components/totals-bar";
 import { ChevronDown, ChevronRight, Circle, Lock, Ban } from "lucide-react";
 import type { BoatWithRelations, EquipmentItem, OarSetItem, UserProfile } from "@/lib/types";
@@ -50,6 +52,7 @@ export function BookingGrid({
 }: Props) {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [bookingTarget, setBookingTarget] = useState<BookingTarget | null>(null);
+  const [selectedBooking, setSelectedBooking] = useState<SerializedBooking | null>(null);
 
   // Filter bookings for the selected date
   const dayBookings = useMemo(
@@ -90,7 +93,10 @@ export function BookingGrid({
     slot: number
   ) {
     const existing = getBooking(resourceId, slot);
-    if (existing) return; // Cell is already booked
+    if (existing) {
+      setSelectedBooking(existing);
+      return;
+    }
     setBookingTarget({ resourceType, resourceId, resourceName, slot });
   }
 
@@ -136,7 +142,22 @@ export function BookingGrid({
     <>
       <TotalsBar inShed={totals.inShed} rowing={totals.rowing} />
 
-      <div className="overflow-x-auto rounded-lg border bg-white">
+      {/* Mobile view */}
+      <MobileBookingView
+        boats={boats}
+        equipment={equipment}
+        oarSets={oarSets}
+        bookings={bookings}
+        selectedDate={selectedDate}
+        user={user}
+        onBookingClick={(booking) => setSelectedBooking(booking)}
+        onSlotClick={(type, id, name, slot) =>
+          setBookingTarget({ resourceType: type, resourceId: id, resourceName: name, slot })
+        }
+      />
+
+      {/* Desktop view */}
+      <div className="overflow-x-auto rounded-lg border bg-white hidden md:block">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-gray-50">
@@ -182,6 +203,7 @@ export function BookingGrid({
                         getBooking={getBooking}
                         onCellClick={handleCellClick}
                         colorClass={section.color}
+                        currentUserId={user.id}
                       />
                     ))}
                 </SectionGroup>
@@ -207,6 +229,7 @@ export function BookingGrid({
                     colorClass={SECTION_COLORS.oars}
                     getBooking={getBooking}
                     onCellClick={handleCellClick}
+                    currentUserId={user.id}
                   />
                 ))}
             </SectionGroup>
@@ -228,6 +251,7 @@ export function BookingGrid({
                     getBooking={getBooking}
                     onCellClick={handleCellClick}
                     colorClass={SECTION_COLORS.private}
+                    currentUserId={user.id}
                   />
                 ))}
             </SectionGroup>
@@ -249,6 +273,7 @@ export function BookingGrid({
                     getBooking={getBooking}
                     onCellClick={handleCellClick}
                     colorClass={SECTION_COLORS.tinny}
+                    currentUserId={user.id}
                   />
                 ))}
             </SectionGroup>
@@ -274,6 +299,7 @@ export function BookingGrid({
                       colorClass={SECTION_COLORS.equipment}
                       getBooking={getBooking}
                       onCellClick={handleCellClick}
+                      currentUserId={user.id}
                     />
                   ))}
                   {bikes.map((e) => (
@@ -285,6 +311,7 @@ export function BookingGrid({
                       colorClass={SECTION_COLORS.equipment}
                       getBooking={getBooking}
                       onCellClick={handleCellClick}
+                      currentUserId={user.id}
                     />
                   ))}
                   {gyms.map((e) => (
@@ -296,6 +323,7 @@ export function BookingGrid({
                       colorClass={SECTION_COLORS.equipment}
                       getBooking={getBooking}
                       onCellClick={handleCellClick}
+                      currentUserId={user.id}
                     />
                   ))}
                 </>
@@ -312,6 +340,17 @@ export function BookingGrid({
           user={user}
           boats={boats}
           onClose={() => setBookingTarget(null)}
+        />
+      )}
+
+      {selectedBooking && (
+        <BookingDetailPopover
+          booking={selectedBooking}
+          boats={boats}
+          equipment={equipment}
+          oarSets={oarSets}
+          user={user}
+          onClose={() => setSelectedBooking(null)}
         />
       )}
     </>
@@ -364,11 +403,13 @@ function BoatRow({
   getBooking,
   onCellClick,
   colorClass,
+  currentUserId,
 }: {
   boat: BoatWithRelations;
   getBooking: (id: string, slot: number) => SerializedBooking | undefined;
   onCellClick: (type: "boat", id: string, name: string, slot: number) => void;
   colorClass: string;
+  currentUserId: string;
 }) {
   const isNotInUse = boat.status === "not_in_use";
   const isBlack = boat.classification === "black";
@@ -403,6 +444,7 @@ function BoatRow({
             key={ts.slot}
             booking={booking}
             isNotInUse={isNotInUse}
+            currentUserId={currentUserId}
             onClick={() =>
               !isNotInUse && onCellClick("boat", boat.id, boat.name, ts.slot)
             }
@@ -421,6 +463,7 @@ function ResourceRow({
   colorClass,
   getBooking,
   onCellClick,
+  currentUserId,
 }: {
   id: string;
   name: string;
@@ -429,6 +472,7 @@ function ResourceRow({
   colorClass: string;
   getBooking: (id: string, slot: number) => SerializedBooking | undefined;
   onCellClick: (type: "equipment" | "oar_set", id: string, name: string, slot: number) => void;
+  currentUserId: string;
 }) {
   return (
     <tr className="border-t hover:bg-gray-50/50">
@@ -451,6 +495,7 @@ function ResourceRow({
           <BookingCell
             key={ts.slot}
             booking={booking}
+            currentUserId={currentUserId}
             onClick={() => onCellClick(resourceType, id, name, ts.slot)}
           />
         );
@@ -462,10 +507,12 @@ function ResourceRow({
 function BookingCell({
   booking,
   isNotInUse,
+  currentUserId,
   onClick,
 }: {
   booking?: SerializedBooking;
   isNotInUse?: boolean;
+  currentUserId: string;
   onClick: () => void;
 }) {
   if (isNotInUse) {
@@ -479,16 +526,26 @@ function BookingCell({
   }
 
   if (booking) {
-    const isStartSlot = true; // We show the name on every occupied slot
+    const isOwn = booking.userId === currentUserId;
     return (
       <td className="px-1 py-1.5 text-center">
-        <div className="h-8 rounded bg-blue-100 border border-blue-200 flex items-center justify-center px-1">
-          <span className="text-xs font-medium text-blue-800 truncate">
-            {isStartSlot
-              ? `${booking.bookerName} (${booking.crewCount})`
-              : "X"}
+        <button
+          className={cn(
+            "h-8 w-full rounded border flex items-center justify-center px-1 cursor-pointer transition-colors",
+            isOwn
+              ? "bg-blue-100 border-blue-300 hover:bg-blue-200"
+              : "bg-gray-100 border-gray-200 hover:bg-gray-200",
+            booking.isRaceSpecific && "ring-1 ring-amber-400"
+          )}
+          onClick={onClick}
+        >
+          <span className={cn(
+            "text-xs font-medium truncate",
+            isOwn ? "text-blue-800" : "text-gray-700"
+          )}>
+            {booking.bookerName} ({booking.crewCount})
           </span>
-        </div>
+        </button>
       </td>
     );
   }

@@ -3,9 +3,18 @@ import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { validateBooking } from "@/lib/validation";
 import { isWeekend } from "@/lib/validation";
-import { addDays, subDays, parseISO } from "date-fns";
+import { addDays, subDays, parseISO, startOfWeek, format } from "date-fns";
 
 export async function GET(request: NextRequest) {
+  const supabase = await createClient();
+  const {
+    data: { user: authUser },
+  } = await supabase.auth.getUser();
+
+  if (!authUser) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const date = searchParams.get("date");
   const weekStart = searchParams.get("weekStart");
@@ -60,6 +69,31 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "User profile not found" }, { status: 404 });
   }
 
+  // Check booking window (if configured for this week)
+  const bookingDate = parseISO(date);
+  const weekStart = startOfWeek(bookingDate, { weekStartsOn: 1 });
+  const bookingWeek = await prisma.bookingWeek.findUnique({
+    where: { weekStart },
+  });
+
+  if (bookingWeek) {
+    const now = new Date();
+    if (now < bookingWeek.opensAt) {
+      return NextResponse.json(
+        {
+          error: `Bookings for the week of ${format(weekStart, "d MMMM yyyy")} open on ${format(bookingWeek.opensAt, "EEEE d MMMM 'at' h:mma")}.`,
+        },
+        { status: 403 }
+      );
+    }
+    if (bookingWeek.closesAt && now > bookingWeek.closesAt) {
+      return NextResponse.json(
+        { error: `Bookings for the week of ${format(weekStart, "d MMMM yyyy")} have closed.` },
+        { status: 403 }
+      );
+    }
+  }
+
   // Fetch resource details for validation
   let boat = null;
   let equipmentItem = null;
@@ -101,7 +135,6 @@ export async function POST(request: NextRequest) {
   }
 
   // Run validation
-  const bookingDate = parseISO(date);
   const validationErrors = validateBooking({
     boatType: boat?.boatType,
     boatClassification: boat?.classification as "black" | "green" | undefined,

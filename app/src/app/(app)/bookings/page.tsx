@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 import { BookingGrid } from "@/components/booking-grid";
 import { WeekNav } from "@/components/week-nav";
 import { startOfWeek, addDays, format, parseISO } from "date-fns";
@@ -46,20 +47,14 @@ export default async function BookingsPage({
     },
   });
 
-  // Get or create user profile
-  let userProfile = await prisma.user.findUnique({
+  // Get user profile — only existing invited/registered users can access
+  const userProfile = await prisma.user.findUnique({
     where: { email: authUser!.email! },
     include: { squads: { include: { squad: true } } },
   });
 
   if (!userProfile) {
-    userProfile = await prisma.user.create({
-      data: {
-        email: authUser!.email!,
-        fullName: authUser!.user_metadata?.full_name ?? authUser!.email!.split("@")[0],
-      },
-      include: { squads: { include: { squad: true } } },
-    });
+    redirect("/pending-approval");
   }
 
   // Get the booking week config (if any)

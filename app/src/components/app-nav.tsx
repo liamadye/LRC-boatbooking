@@ -6,14 +6,16 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+const ADMIN_ROLES = ["admin", "captain", "vice_captain"];
+
 const navLinks = [
-  { href: "/bookings", label: "Bookings" },
-  { href: "/my-bookings", label: "My Bookings" },
-  { href: "/profile", label: "Profile" },
-  { href: "/admin", label: "Admin" },
+  { href: "/bookings", label: "Bookings", adminOnly: false },
+  { href: "/my-bookings", label: "My Bookings", adminOnly: false },
+  { href: "/profile", label: "Profile", adminOnly: false },
+  { href: "/admin", label: "Admin", adminOnly: true },
 ];
 
-export function AppNav({ userEmail }: { userEmail: string }) {
+export function AppNav({ userEmail, userRole }: { userEmail: string; userRole: string }) {
   const pathname = usePathname();
   const supabase = createClient();
 
@@ -36,7 +38,7 @@ export function AppNav({ userEmail }: { userEmail: string }) {
             <span className="hidden sm:inline">Boat Booking</span>
           </Link>
           <nav className="flex items-center gap-1">
-            {navLinks.map((link) => (
+            {navLinks.filter((link) => !link.adminOnly || ADMIN_ROLES.includes(userRole)).map((link) => (
               <Link
                 key={link.href}
                 href={link.href}

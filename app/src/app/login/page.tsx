@@ -12,7 +12,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<"login" | "signup">("login");
 
   const supabase = createClient();
 
@@ -21,10 +20,7 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
 
-    const { error } =
-      mode === "login"
-        ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
       setError(error.message);
@@ -126,36 +122,12 @@ export default function LoginPage() {
             )}
 
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading
-                ? "Loading..."
-                : mode === "login"
-                  ? "Sign In"
-                  : "Create Account"}
+              {loading ? "Signing in..." : "Sign In"}
             </Button>
           </form>
 
-          <p className="text-center text-sm text-muted-foreground">
-            {mode === "login" ? (
-              <>
-                Don&apos;t have an account?{" "}
-                <button
-                  className="underline text-foreground"
-                  onClick={() => setMode("signup")}
-                >
-                  Sign up
-                </button>
-              </>
-            ) : (
-              <>
-                Already have an account?{" "}
-                <button
-                  className="underline text-foreground"
-                  onClick={() => setMode("login")}
-                >
-                  Sign in
-                </button>
-              </>
-            )}
+          <p className="text-center text-xs text-muted-foreground">
+            Need an account? Contact a club administrator for an invitation.
           </p>
         </CardContent>
       </Card>

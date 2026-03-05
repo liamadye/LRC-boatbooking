@@ -4,6 +4,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BoatManagement } from "./boat-management";
 import { MemberManagement } from "./member-management";
 import { ApplicationReview } from "./application-review";
+import { InviteManagement } from "./invite-management";
+import { BookingManagement } from "./booking-management";
 import type { BoatWithRelations } from "@/lib/types";
 
 type AdminUser = {
@@ -33,16 +35,30 @@ type Squad = {
   name: string;
 };
 
+type Invitation = {
+  id: string;
+  email: string;
+  token: string;
+  role: string;
+  memberType: string;
+  acceptedAt: string | null;
+  expiresAt: string;
+  createdAt: string;
+  inviter: { fullName: string };
+};
+
 export function AdminTabs({
   boats,
   squads,
   users,
   applications,
+  invitations,
 }: {
   boats: BoatWithRelations[];
   squads: Squad[];
   users: AdminUser[];
   applications: Application[];
+  invitations: Invitation[];
 }) {
   return (
     <Tabs defaultValue="boats">
@@ -52,6 +68,12 @@ export function AdminTabs({
         </TabsTrigger>
         <TabsTrigger value="members">
           Members ({users.length})
+        </TabsTrigger>
+        <TabsTrigger value="bookings">
+          All Bookings
+        </TabsTrigger>
+        <TabsTrigger value="invitations">
+          Invitations
         </TabsTrigger>
         <TabsTrigger value="applications">
           Applications
@@ -69,6 +91,14 @@ export function AdminTabs({
 
       <TabsContent value="members">
         <MemberManagement users={users} squads={squads} />
+      </TabsContent>
+
+      <TabsContent value="bookings">
+        <BookingManagement />
+      </TabsContent>
+
+      <TabsContent value="invitations">
+        <InviteManagement invitations={invitations} />
       </TabsContent>
 
       <TabsContent value="applications">

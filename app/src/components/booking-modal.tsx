@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import { TIME_SLOTS } from "@/lib/constants";
+import { TIME_SLOTS, MAX_CREW } from "@/lib/constants";
 import { useToast } from "@/hooks/use-toast";
 import type { BoatWithRelations, UserProfile } from "@/lib/types";
 
@@ -40,16 +40,16 @@ export function BookingModal({
   const router = useRouter();
   const { toast } = useToast();
 
+  const boat = boats.find((b) => b.id === target.resourceId);
+  const maxCrew = boat ? (MAX_CREW[boat.boatType] ?? 1) : 1;
+
   const [bookerName, setBookerName] = useState(user.fullName);
-  const [crewCount, setCrewCount] = useState(1);
   const [endSlot, setEndSlot] = useState(target.slot);
   const [isRaceSpecific, setIsRaceSpecific] = useState(false);
   const [raceDetails, setRaceDetails] = useState("");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
-
-  const boat = boats.find((b) => b.id === target.resourceId);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -65,7 +65,7 @@ export function BookingModal({
           resourceType: target.resourceType,
           resourceId: target.resourceId,
           bookerName,
-          crewCount,
+          crewCount: maxCrew,
           startSlot: target.slot,
           endSlot,
           isRaceSpecific,
@@ -130,18 +130,11 @@ export function BookingModal({
             />
           </div>
 
-          <div>
-            <Label htmlFor="crewCount">Number in boat / crew</Label>
-            <Input
-              id="crewCount"
-              type="number"
-              min={1}
-              max={9}
-              value={crewCount}
-              onChange={(e) => setCrewCount(parseInt(e.target.value) || 1)}
-              required
-            />
-          </div>
+          {target.resourceType === "boat" && boat && (
+            <div className="text-sm text-muted-foreground">
+              Crew: {maxCrew}{maxCrew > 1 && boat.boatType.includes("+") ? ` (${maxCrew - 1} + cox)` : ""}
+            </div>
+          )}
 
           <div>
             <Label htmlFor="endSlot">Book through to slot</Label>
