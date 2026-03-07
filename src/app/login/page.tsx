@@ -5,15 +5,31 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resetSent, setResetSent] = useState(false);
 
   const supabase = createClient();
+
+  // Handle implicit flow: Supabase recovery links put token in URL hash
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash && hash.includes("access_token")) {
+      // Supabase client auto-picks up the hash token
+      supabase.auth.getSession().then(({ data }) => {
+        if (data.session) {
+          const params = new URLSearchParams(hash.substring(1));
+          const type = params.get("type");
+          window.location.href = type === "recovery" ? "/profile" : "/bookings";
+        }
+      });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleEmailLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -125,6 +141,38 @@ export default function LoginPage() {
               {loading ? "Signing in..." : "Sign In"}
             </Button>
           </form>
+
+          <div className="text-center">
+            <button
+              type="button"
+              className="text-xs text-blue-600 hover:underline"
+              onClick={async () => {
+                const target = email;
+                if (!target) {
+                  setError("Enter your email address first");
+                  return;
+                }
+                setLoading(true);
+                setError(null);
+                const { error: resetError } = await supabase.auth.resetPasswordForEmail(target, {
+                  redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
+                });
+                setLoading(false);
+                if (resetError) {
+                  setError(resetError.message);
+                } else {
+                  setResetSent(true);
+                }
+              }}
+            >
+              Forgot password?
+            </button>
+            {resetSent && (
+              <p className="text-xs text-green-600 mt-1">
+                Password reset email sent. Check your inbox.
+              </p>
+            )}
+          </div>
 
           <p className="text-center text-xs text-muted-foreground">
             Need an account? Contact a club administrator for an invitation.
