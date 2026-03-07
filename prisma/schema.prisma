@@ -91,6 +91,7 @@ model User {
   blackBoatApplications BlackBoatApplication[] @relation("Applicant")
   reviewedApplications  BlackBoatApplication[] @relation("Reviewer")
   sentInvitations      Invitation[]           @relation("Inviter")
+  auditLogs            AuditLog[]
 
   @@map("users")
 }
@@ -252,4 +253,24 @@ model BlackBoatApplication {
   reviewer  User? @relation("Reviewer", fields: [reviewedBy], references: [id])
 
   @@map("black_boat_applications")
+}
+
+// ─── Audit Log ─────────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  action     String
+  targetType String   @map("target_type")
+  targetId   String   @map("target_id")
+  before     Json?
+  after      Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([action])
+  @@index([targetType])
+  @@index([createdAt])
+  @@map("audit_logs")
 }

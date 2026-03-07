@@ -24,30 +24,44 @@ type BookingTarget = {
   slot: number;
 };
 
+type EditingBooking = {
+  id: string;
+  bookerName: string;
+  crewCount: number;
+  startSlot: number;
+  endSlot: number;
+  isRaceSpecific: boolean;
+  raceDetails?: string | null;
+  notes?: string | null;
+};
+
 export function BookingModal({
   target,
   selectedDate,
   user,
   boats,
+  editingBooking,
   onClose,
 }: {
   target: BookingTarget;
   selectedDate: string;
   user: UserProfile;
   boats: BoatWithRelations[];
+  editingBooking?: EditingBooking;
   onClose: () => void;
 }) {
   const router = useRouter();
   const { toast } = useToast();
 
+  const isEditing = !!editingBooking;
   const boat = boats.find((b) => b.id === target.resourceId);
   const maxCrew = boat ? (MAX_CREW[boat.boatType] ?? 1) : 1;
 
-  const [bookerName, setBookerName] = useState(user.fullName);
-  const [endSlot, setEndSlot] = useState(target.slot);
-  const [isRaceSpecific, setIsRaceSpecific] = useState(false);
-  const [raceDetails, setRaceDetails] = useState("");
-  const [notes, setNotes] = useState("");
+  const [bookerName, setBookerName] = useState(editingBooking?.bookerName ?? user.fullName);
+  const [endSlot, setEndSlot] = useState(editingBooking?.endSlot ?? target.slot);
+  const [isRaceSpecific, setIsRaceSpecific] = useState(editingBooking?.isRaceSpecific ?? false);
+  const [raceDetails, setRaceDetails] = useState(editingBooking?.raceDetails ?? "");
+  const [notes, setNotes] = useState(editingBooking?.notes ?? "");
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
 
@@ -57,22 +71,38 @@ export function BookingModal({
     setErrors([]);
 
     try {
-      const res = await fetch("/api/bookings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date: selectedDate,
-          resourceType: target.resourceType,
-          resourceId: target.resourceId,
-          bookerName,
-          crewCount: maxCrew,
-          startSlot: target.slot,
-          endSlot,
-          isRaceSpecific,
-          raceDetails: isRaceSpecific ? raceDetails : null,
-          notes: notes || null,
-        }),
-      });
+      let res: Response;
+
+      if (isEditing) {
+        res = await fetch(`/api/bookings/${editingBooking.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bookerName,
+            endSlot,
+            isRaceSpecific,
+            raceDetails: isRaceSpecific ? raceDetails : null,
+            notes: notes || null,
+          }),
+        });
+      } else {
+        res = await fetch("/api/bookings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            date: selectedDate,
+            resourceType: target.resourceType,
+            resourceId: target.resourceId,
+            bookerName,
+            crewCount: maxCrew,
+            startSlot: target.slot,
+            endSlot,
+            isRaceSpecific,
+            raceDetails: isRaceSpecific ? raceDetails : null,
+            notes: notes || null,
+          }),
+        });
+      }
 
       const data = await res.json();
 
@@ -80,12 +110,15 @@ export function BookingModal({
         if (data.errors) {
           setErrors(data.errors.map((e: { message: string }) => e.message));
         } else {
-          setErrors([data.error ?? "Failed to create booking"]);
+          setErrors([data.error ?? `Failed to ${isEditing ? "update" : "create"} booking`]);
         }
         return;
       }
 
-      toast({ title: "Booking created", description: `${target.resourceName} booked successfully.` });
+      toast({
+        title: isEditing ? "Booking updated" : "Booking created",
+        description: `${target.resourceName} ${isEditing ? "updated" : "booked"} successfully.`,
+      });
       onClose();
       router.refresh();
     } catch {
@@ -101,7 +134,7 @@ export function BookingModal({
     <Dialog open onOpenChange={() => onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Book {target.resourceName}</DialogTitle>
+          <DialogTitle>{isEditing ? "Edit" : "Book"} {target.resourceName}</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -143,6 +176,7 @@ export function BookingModal({
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               value={endSlot}
               onChange={(e) => setEndSlot(parseInt(e.target.value))}
+              disabled={isEditing}
             >
               {TIME_SLOTS.filter((ts) => ts.slot >= target.slot).map((ts) => (
                 <option key={ts.slot} value={ts.slot}>
@@ -208,7 +242,9 @@ export function BookingModal({
               Cancel
             </Button>
             <Button type="submit" disabled={loading}>
-              {loading ? "Booking..." : "Confirm Booking"}
+              {loading
+                ? isEditing ? "Saving..." : "Booking..."
+                : isEditing ? "Save Changes" : "Confirm Booking"}
             </Button>
           </div>
         </form>

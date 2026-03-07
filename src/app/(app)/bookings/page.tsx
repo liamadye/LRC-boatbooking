@@ -109,6 +109,7 @@ export default async function BookingsPage({
         bookings={serializedBookings}
         selectedDate={format(selectedDate, "yyyy-MM-dd")}
         user={serializedUser}
+        loadedAt={new Date().toISOString()}
       />
     </div>
   );

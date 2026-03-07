@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { validateBooking, isWeekend } from "@/lib/validation";
 import { can } from "@/lib/permissions";
+import { logAudit } from "@/lib/audit";
 
 export async function DELETE(
   request: NextRequest,
@@ -41,6 +42,17 @@ export async function DELETE(
   }
 
   await prisma.booking.delete({ where: { id } });
+
+  // Log audit when admin cancels another user's booking
+  if (booking.userId !== user.id) {
+    await logAudit({
+      userId: user.id,
+      action: "booking.cancel",
+      targetType: "booking",
+      targetId: id,
+      before: { bookerName: booking.bookerName, date: booking.date, startSlot: booking.startSlot, endSlot: booking.endSlot, boatId: booking.boatId },
+    });
+  }
 
   return NextResponse.json({ success: true });
 }

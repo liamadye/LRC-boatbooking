@@ -6,6 +6,8 @@ import { MemberManagement } from "./member-management";
 import { ApplicationReview } from "./application-review";
 import { InviteManagement } from "./invite-management";
 import { BookingManagement } from "./booking-management";
+import { AuditLogViewer } from "./audit-log-viewer";
+import { SquadManagement } from "./squad-management";
 import type { BoatWithRelations } from "@/lib/types";
 
 type AdminUser = {
@@ -83,6 +85,12 @@ export function AdminTabs({
             </span>
           )}
         </TabsTrigger>
+        <TabsTrigger value="squads">
+          Squads
+        </TabsTrigger>
+        <TabsTrigger value="audit-log">
+          Audit Log
+        </TabsTrigger>
       </TabsList>
 
       <TabsContent value="boats">
@@ -103,6 +111,14 @@ export function AdminTabs({
 
       <TabsContent value="applications">
         <ApplicationReview applications={applications} />
+      </TabsContent>
+
+      <TabsContent value="squads">
+        <SquadManagement users={users} />
+      </TabsContent>
+
+      <TabsContent value="audit-log">
+        <AuditLogViewer />
       </TabsContent>
     </Tabs>
   );

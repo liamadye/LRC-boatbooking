@@ -1,7 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { createRateLimiter } from "@/lib/rate-limit";
+
+const acceptLimiter = createRateLimiter({ windowMs: 60_000, maxRequests: 5 });
 
 export async function POST(request: NextRequest) {
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0] ?? "unknown";
+  const { allowed, retryAfter } = acceptLimiter.check(ip);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(retryAfter) } }
+    );
+  }
+
   const body = await request.json();
   const { token, fullName } = body;
 

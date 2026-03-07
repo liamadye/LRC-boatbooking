@@ -28,6 +28,7 @@ type SerializedBooking = {
   startSlot: number;
   endSlot: number;
   isRaceSpecific: boolean;
+  raceDetails?: string | null;
   notes: string | null;
 };
 
@@ -38,6 +39,7 @@ export function BookingDetailPopover({
   oarSets,
   user,
   onClose,
+  onEdit,
 }: {
   booking: SerializedBooking;
   boats: BoatWithRelations[];
@@ -45,6 +47,7 @@ export function BookingDetailPopover({
   oarSets: OarSetItem[];
   user: UserProfile;
   onClose: () => void;
+  onEdit?: (booking: SerializedBooking) => void;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -61,6 +64,7 @@ export function BookingDetailPopover({
 
   const isOwner = booking.userId === user.id;
   const canCancel = isOwner || can(user.role, "manage_bookings");
+  const canEdit = isOwner || can(user.role, "manage_bookings");
 
   async function handleCancel() {
     setCancelling(true);
@@ -131,6 +135,18 @@ export function BookingDetailPopover({
           <Button variant="ghost" size="sm" onClick={onClose}>
             Close
           </Button>
+          {canEdit && onEdit && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                onClose();
+                onEdit(booking);
+              }}
+            >
+              Edit
+            </Button>
+          )}
           {canCancel && (
             <Button
               variant="destructive"

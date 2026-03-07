@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { TIME_SLOTS, BOAT_SECTIONS, SECTION_COLORS } from "@/lib/constants";
 import { BookingModal } from "@/components/booking-modal";
 import { BookingDetailPopover } from "@/components/booking-detail-popover";
 import { MobileBookingView } from "@/components/mobile-booking-view";
 import { TotalsBar } from "@/components/totals-bar";
-import { ChevronDown, ChevronRight, Circle, Lock, Ban } from "lucide-react";
+import { ChevronDown, ChevronRight, Circle, Lock, Ban, RefreshCw } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
 import type { BoatWithRelations, EquipmentItem, OarSetItem, UserProfile } from "@/lib/types";
 
 type SerializedBooking = {
@@ -23,6 +25,7 @@ type SerializedBooking = {
   startSlot: number;
   endSlot: number;
   isRaceSpecific: boolean;
+  raceDetails?: string | null;
   notes: string | null;
 };
 
@@ -33,6 +36,7 @@ type Props = {
   bookings: SerializedBooking[];
   selectedDate: string;
   user: UserProfile;
+  loadedAt?: string;
 };
 
 type BookingTarget = {
@@ -49,10 +53,28 @@ export function BookingGrid({
   bookings,
   selectedDate,
   user,
+  loadedAt,
 }: Props) {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [bookingTarget, setBookingTarget] = useState<BookingTarget | null>(null);
   const [selectedBooking, setSelectedBooking] = useState<SerializedBooking | null>(null);
+  const [editingBooking, setEditingBooking] = useState<SerializedBooking | null>(null);
+
+  function handleEdit(booking: SerializedBooking) {
+    const resourceId = booking.boatId ?? booking.equipmentId ?? booking.oarSetId ?? "";
+    const boat = boats.find((b) => b.id === booking.boatId);
+    const equip = equipment.find((e) => e.id === booking.equipmentId);
+    const oar = oarSets.find((o) => o.id === booking.oarSetId);
+    const resourceName = boat?.name ?? (equip ? `${equip.type.charAt(0).toUpperCase() + equip.type.slice(1)} ${equip.number}` : oar?.name ?? "Unknown");
+
+    setBookingTarget({
+      resourceType: booking.resourceType as "boat" | "equipment" | "oar_set",
+      resourceId,
+      resourceName,
+      slot: booking.startSlot,
+    });
+    setEditingBooking(booking);
+  }
 
   // Filter bookings for the selected date
   const dayBookings = useMemo(
@@ -140,6 +162,7 @@ export function BookingGrid({
 
   return (
     <>
+      {loadedAt && <RefreshIndicator loadedAt={loadedAt} />}
       <TotalsBar inShed={totals.inShed} rowing={totals.rowing} />
 
       {/* Mobile view */}
@@ -339,7 +362,8 @@ export function BookingGrid({
           selectedDate={selectedDate}
           user={user}
           boats={boats}
-          onClose={() => setBookingTarget(null)}
+          editingBooking={editingBooking ?? undefined}
+          onClose={() => { setBookingTarget(null); setEditingBooking(null); }}
         />
       )}
 
@@ -351,6 +375,7 @@ export function BookingGrid({
           oarSets={oarSets}
           user={user}
           onClose={() => setSelectedBooking(null)}
+          onEdit={handleEdit}
         />
       )}
     </>
@@ -501,6 +526,42 @@ function ResourceRow({
         );
       })}
     </tr>
+  );
+}
+
+function RefreshIndicator({ loadedAt }: { loadedAt: string }) {
+  const router = useRouter();
+  const [label, setLabel] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+
+  const updateLabel = useCallback(() => {
+    setLabel(formatDistanceToNow(new Date(loadedAt), { addSuffix: true }));
+  }, [loadedAt]);
+
+  useEffect(() => {
+    updateLabel();
+    const interval = setInterval(updateLabel, 30_000);
+    return () => clearInterval(interval);
+  }, [updateLabel]);
+
+  function handleRefresh() {
+    setRefreshing(true);
+    router.refresh();
+    // The page will re-render with new loadedAt, resetting this component
+  }
+
+  return (
+    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <span>Last refreshed {label}</span>
+      <button
+        onClick={handleRefresh}
+        disabled={refreshing}
+        className="inline-flex items-center gap-1 rounded px-2 py-1 hover:bg-gray-100 transition-colors disabled:opacity-50"
+      >
+        <RefreshCw className={cn("h-3 w-3", refreshing && "animate-spin")} />
+        Refresh
+      </button>
+    </div>
   );
 }
 

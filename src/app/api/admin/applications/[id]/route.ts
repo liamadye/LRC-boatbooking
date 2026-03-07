@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 
 export async function PATCH(
   request: NextRequest,
@@ -13,6 +14,8 @@ export async function PATCH(
 
   const { id } = await params;
   const body = await request.json();
+
+  const before = await prisma.blackBoatApplication.findUnique({ where: { id } });
 
   const application = await prisma.blackBoatApplication.update({
     where: { id },
@@ -31,6 +34,15 @@ export async function PATCH(
       data: { hasBlackBoatEligibility: true },
     });
   }
+
+  await logAudit({
+    userId: admin.id,
+    action: "application.review",
+    targetType: "application",
+    targetId: id,
+    before: { status: before?.status },
+    after: { status: application.status },
+  });
 
   return NextResponse.json(application);
 }

@@ -4,6 +4,9 @@ import { createClient } from "@/lib/supabase/server";
 import { validateBooking } from "@/lib/validation";
 import { isWeekend } from "@/lib/validation";
 import { addDays, subDays, parseISO, startOfWeek, format } from "date-fns";
+import { createRateLimiter } from "@/lib/rate-limit";
+
+const bookingLimiter = createRateLimiter({ windowMs: 60_000, maxRequests: 20 });
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -37,6 +40,15 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0] ?? "unknown";
+  const { allowed, retryAfter } = bookingLimiter.check(ip);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(retryAfter) } }
+    );
+  }
+
   const supabase = await createClient();
   const {
     data: { user: authUser },
