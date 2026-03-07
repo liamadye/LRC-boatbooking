@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   Dialog,
@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import { TIME_SLOTS } from "@/lib/constants";
+import { TIME_SLOTS, MAX_CREW } from "@/lib/constants";
 import { useToast } from "@/hooks/use-toast";
 import type { BoatWithRelations, UserProfile } from "@/lib/types";
 
@@ -29,18 +29,40 @@ export function BookingModal({
   selectedDate,
   user,
   boats,
+  squads = [],
   onClose,
 }: {
   target: BookingTarget;
   selectedDate: string;
   user: UserProfile;
   boats: BoatWithRelations[];
+  squads?: { id: string; name: string }[];
   onClose: () => void;
 }) {
   const router = useRouter();
   const { toast } = useToast();
 
-  const [bookerName, setBookerName] = useState(user.fullName);
+  const boat = boats.find((b) => b.id === target.resourceId);
+
+  // Determine if this is a "big boat" (4+ crew capacity)
+  const isBigBoat = useMemo(() => {
+    if (!boat) return false;
+    const maxCrew = MAX_CREW[boat.boatType] ?? 1;
+    return maxCrew >= 4;
+  }, [boat]);
+
+  // Default booker name: for big boats, use user's first squad name; otherwise personal name
+  const defaultName = useMemo(() => {
+    if (isBigBoat && user.squads.length > 0) {
+      return user.squads[0].name;
+    }
+    return user.fullName;
+  }, [isBigBoat, user]);
+
+  const [bookerName, setBookerName] = useState(defaultName);
+  const [nameMode, setNameMode] = useState<"squad" | "custom">(
+    isBigBoat && user.squads.length > 0 ? "squad" : "custom"
+  );
   const [crewCount, setCrewCount] = useState(1);
   const [endSlot, setEndSlot] = useState(target.slot);
   const [isRaceSpecific, setIsRaceSpecific] = useState(false);
@@ -48,8 +70,6 @@ export function BookingModal({
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
-
-  const boat = boats.find((b) => b.id === target.resourceId);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -120,15 +140,66 @@ export function BookingModal({
             )}
           </div>
 
-          <div>
-            <Label htmlFor="bookerName">Name</Label>
-            <Input
-              id="bookerName"
-              value={bookerName}
-              onChange={(e) => setBookerName(e.target.value)}
-              required
-            />
-          </div>
+          {/* Booker name: crew dropdown for big boats, text input for others */}
+          {isBigBoat ? (
+            <div className="space-y-2">
+              <Label>Booking for</Label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setNameMode("squad"); if (user.squads.length > 0) setBookerName(user.squads[0].name); }}
+                  className={`px-3 py-1 rounded text-sm border ${nameMode === "squad" ? "bg-blue-100 border-blue-300" : "bg-gray-50 border-gray-200"}`}
+                >
+                  Crew
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setNameMode("custom"); setBookerName(user.fullName); }}
+                  className={`px-3 py-1 rounded text-sm border ${nameMode === "custom" ? "bg-blue-100 border-blue-300" : "bg-gray-50 border-gray-200"}`}
+                >
+                  Individual
+                </button>
+              </div>
+              {nameMode === "squad" ? (
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={bookerName}
+                  onChange={(e) => setBookerName(e.target.value)}
+                >
+                  {/* User's own squads first */}
+                  {user.squads.map((s) => (
+                    <option key={s.id} value={s.name}>
+                      {s.name} (your crew)
+                    </option>
+                  ))}
+                  {/* Then all other squads */}
+                  {squads
+                    .filter((s) => !user.squads.some((us) => us.id === s.id))
+                    .map((s) => (
+                      <option key={s.id} value={s.name}>
+                        {s.name}
+                      </option>
+                    ))}
+                </select>
+              ) : (
+                <Input
+                  value={bookerName}
+                  onChange={(e) => setBookerName(e.target.value)}
+                  required
+                />
+              )}
+            </div>
+          ) : (
+            <div>
+              <Label htmlFor="bookerName">Name</Label>
+              <Input
+                id="bookerName"
+                value={bookerName}
+                onChange={(e) => setBookerName(e.target.value)}
+                required
+              />
+            </div>
+          )}
 
           <div>
             <Label htmlFor="crewCount">Number in boat / crew</Label>

@@ -1,4 +1,4 @@
-import { MAX_CREW, WEIGHT_TOLERANCE_PERCENT, MEMBER_TIME_RESTRICTIONS } from "./constants";
+import { MAX_CREW, MEMBER_TIME_RESTRICTIONS } from "./constants";
 
 export type ValidationError = {
   field: string;
@@ -88,19 +88,8 @@ export function validateBooking(input: BookingInput): ValidationError[] {
     }
   }
 
-  // 6. Weight check — crew average within ±10% of boat weight
-  if (input.boatAvgWeightKg && input.crewAvgWeightKg) {
-    const tolerance = input.boatAvgWeightKg * (WEIGHT_TOLERANCE_PERCENT / 100);
-    const minWeight = input.boatAvgWeightKg - tolerance;
-    const maxWeight = input.boatAvgWeightKg + tolerance;
-
-    if (input.crewAvgWeightKg < minWeight || input.crewAvgWeightKg > maxWeight) {
-      errors.push({
-        field: "weight",
-        message: `Crew average weight (${input.crewAvgWeightKg}kg) should be within ±10% of the boat weight (${input.boatAvgWeightKg}kg). Acceptable range: ${minWeight.toFixed(1)}kg – ${maxWeight.toFixed(1)}kg.`,
-      });
-    }
-  }
+  // 6. Weight check — disabled per club feedback
+  // Weight validation is informational only; not enforced at booking time.
 
   // 7. Member type time restrictions
   if (input.userMemberType && input.startSlot) {

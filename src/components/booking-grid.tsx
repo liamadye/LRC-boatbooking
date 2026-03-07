@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { TIME_SLOTS, BOAT_SECTIONS, SECTION_COLORS } from "@/lib/constants";
 import { BookingModal } from "@/components/booking-modal";
 import { TotalsBar } from "@/components/totals-bar";
+import { FilterBar, type Filters } from "@/components/filter-bar";
 import { ChevronDown, ChevronRight, Circle, Lock, Ban } from "lucide-react";
 import type { BoatWithRelations, EquipmentItem, OarSetItem, UserProfile } from "@/lib/types";
 
@@ -31,6 +32,7 @@ type Props = {
   bookings: SerializedBooking[];
   selectedDate: string;
   user: UserProfile;
+  squads?: { id: string; name: string }[];
 };
 
 type BookingTarget = {
@@ -47,9 +49,15 @@ export function BookingGrid({
   bookings,
   selectedDate,
   user,
+  squads = [],
 }: Props) {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [bookingTarget, setBookingTarget] = useState<BookingTarget | null>(null);
+  const [filters, setFilters] = useState<Filters>({
+    search: "",
+    classification: "all",
+    status: "all",
+  });
 
   // Filter bookings for the selected date
   const dayBookings = useMemo(
@@ -69,6 +77,25 @@ export function BookingGrid({
     }
     return idx;
   }, [dayBookings]);
+
+  // Apply filters to boats
+  const filteredBoats = useMemo(() => {
+    return boats.filter((b) => {
+      if (filters.search) {
+        const q = filters.search.toLowerCase();
+        if (!b.name.toLowerCase().includes(q) && !b.boatType.toLowerCase().includes(q)) {
+          return false;
+        }
+      }
+      if (filters.classification !== "all" && b.classification !== filters.classification) {
+        return false;
+      }
+      if (filters.status !== "all" && b.status !== filters.status) {
+        return false;
+      }
+      return true;
+    });
+  }, [boats, filters]);
 
   function toggleSection(section: string) {
     setCollapsedSections((prev) => {
@@ -90,20 +117,27 @@ export function BookingGrid({
     slot: number
   ) {
     const existing = getBooking(resourceId, slot);
-    if (existing) return; // Cell is already booked
+    if (existing) return;
     setBookingTarget({ resourceType, resourceId, resourceName, slot });
   }
 
-  // Group club boats by section
-  const clubBoats = boats.filter((b) => b.category === "club");
-  const privateBoats = boats.filter((b) => b.category === "private");
-  const tinnies = boats.filter((b) => b.category === "tinny");
+  // Count available (unbooked on this day) boats in a section
+  function countAvailable(sectionBoats: BoatWithRelations[]): number {
+    return sectionBoats.filter(
+      (b) => b.status === "available" && !bookingIndex[b.id]
+    ).length;
+  }
+
+  // Group boats using filtered set
+  const clubBoats = filteredBoats.filter((b) => b.category === "club");
+  const privateBoats = filteredBoats.filter((b) => b.category === "private");
+  const tinnies = filteredBoats.filter((b) => b.category === "tinny");
 
   const ergs = equipment.filter((e) => e.type === "erg");
   const bikes = equipment.filter((e) => e.type === "bike");
   const gyms = equipment.filter((e) => e.type === "gym");
 
-  // Calculate totals
+  // Calculate totals (use ALL boats, not filtered)
   const totals = useMemo(() => {
     const inShed: Record<number, number> = {};
     const rowing: Record<number, number> = {};
@@ -116,7 +150,7 @@ export function BookingGrid({
         if (b.resourceType === "boat") {
           const boat = boats.find((bt) => bt.id === b.boatId);
           if (boat?.category === "tinny") {
-            inShed[s] += b.crewCount; // tinnies count in shed
+            inShed[s] += b.crewCount;
           } else {
             rowing[s] += b.crewCount;
             if (!boat?.isOutside) {
@@ -124,7 +158,6 @@ export function BookingGrid({
             }
           }
         } else {
-          // Equipment bookings count in shed total
           inShed[s] += b.crewCount;
         }
       }
@@ -134,6 +167,8 @@ export function BookingGrid({
 
   return (
     <>
+      <FilterBar filters={filters} onChange={setFilters} />
+
       <TotalsBar inShed={totals.inShed} rowing={totals.rowing} />
 
       <div className="overflow-x-auto rounded-lg border bg-white">
@@ -157,19 +192,21 @@ export function BookingGrid({
             </tr>
           </thead>
           <tbody>
-            {/* ── Club Boats by section ── */}
+            {/* Club Boats by section */}
             {BOAT_SECTIONS.map((section) => {
               const sectionBoats = clubBoats.filter((b) =>
                 section.types.includes(b.boatType)
               );
               if (sectionBoats.length === 0) return null;
               const isCollapsed = collapsedSections.has(section.label);
+              const available = countAvailable(sectionBoats);
 
               return (
                 <SectionGroup key={section.label}>
                   <SectionHeader
                     label={section.label}
                     count={sectionBoats.length}
+                    available={available}
                     isCollapsed={isCollapsed}
                     onToggle={() => toggleSection(section.label)}
                     colorClass={SECTION_COLORS.club}
@@ -188,7 +225,7 @@ export function BookingGrid({
               );
             })}
 
-            {/* ── Oar Sets ── */}
+            {/* Oar Sets */}
             <SectionGroup>
               <SectionHeader
                 label="Oar Sets"
@@ -211,7 +248,7 @@ export function BookingGrid({
                 ))}
             </SectionGroup>
 
-            {/* ── Private Boats ── */}
+            {/* Private Boats */}
             <SectionGroup>
               <SectionHeader
                 label="Private Boats"
@@ -232,7 +269,7 @@ export function BookingGrid({
                 ))}
             </SectionGroup>
 
-            {/* ── Tinnies ── */}
+            {/* Tinnies */}
             <SectionGroup>
               <SectionHeader
                 label="Tinnies (Coach Boats)"
@@ -253,7 +290,7 @@ export function BookingGrid({
                 ))}
             </SectionGroup>
 
-            {/* ── Equipment ── */}
+            {/* Equipment */}
             <SectionGroup>
               <SectionHeader
                 label="Ergs, Bikes & Gym"
@@ -311,6 +348,7 @@ export function BookingGrid({
           selectedDate={selectedDate}
           user={user}
           boats={boats}
+          squads={squads}
           onClose={() => setBookingTarget(null)}
         />
       )}
@@ -318,7 +356,7 @@ export function BookingGrid({
   );
 }
 
-// ─── Sub-components ─────────────────────────────────────────────
+// Sub-components
 
 function SectionGroup({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
@@ -327,12 +365,14 @@ function SectionGroup({ children }: { children: React.ReactNode }) {
 function SectionHeader({
   label,
   count,
+  available,
   isCollapsed,
   onToggle,
   colorClass,
 }: {
   label: string;
   count: number;
+  available?: number;
   isCollapsed: boolean;
   onToggle: () => void;
   colorClass: string;
@@ -351,7 +391,7 @@ function SectionHeader({
           )}
           {label}
           <span className="text-xs text-muted-foreground font-normal">
-            ({count})
+            {count} boats{available !== undefined ? ` · ${available} free` : ""}
           </span>
         </div>
       </td>
@@ -479,14 +519,11 @@ function BookingCell({
   }
 
   if (booking) {
-    const isStartSlot = true; // We show the name on every occupied slot
     return (
       <td className="px-1 py-1.5 text-center">
         <div className="h-8 rounded bg-blue-100 border border-blue-200 flex items-center justify-center px-1">
           <span className="text-xs font-medium text-blue-800 truncate">
-            {isStartSlot
-              ? `${booking.bookerName} (${booking.crewCount})`
-              : "X"}
+            {booking.bookerName} ({booking.crewCount})
           </span>
         </div>
       </td>

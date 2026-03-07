@@ -4,6 +4,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BoatManagement } from "./boat-management";
 import { MemberManagement } from "./member-management";
 import { ApplicationReview } from "./application-review";
+import { InviteUser } from "./invite-user";
+import { BookingManagement } from "./booking-management";
 import type { BoatWithRelations } from "@/lib/types";
 
 type AdminUser = {
@@ -61,6 +63,12 @@ export function AdminTabs({
             </span>
           )}
         </TabsTrigger>
+        <TabsTrigger value="bookings">
+          Manage Bookings
+        </TabsTrigger>
+        <TabsTrigger value="invite">
+          Invite User
+        </TabsTrigger>
       </TabsList>
 
       <TabsContent value="boats">
@@ -73,6 +81,14 @@ export function AdminTabs({
 
       <TabsContent value="applications">
         <ApplicationReview applications={applications} />
+      </TabsContent>
+
+      <TabsContent value="bookings">
+        <BookingManagement />
+      </TabsContent>
+
+      <TabsContent value="invite">
+        <InviteUser squads={squads} />
       </TabsContent>
     </Tabs>
   );

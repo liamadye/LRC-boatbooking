@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
-import { BookingGrid } from "@/components/booking-grid";
-import { WeekNav } from "@/components/week-nav";
+import { BookingsClient } from "@/components/bookings-client";
 import { startOfWeek, addDays, format, parseISO } from "date-fns";
 
 export default async function BookingsPage({
@@ -25,7 +24,7 @@ export default async function BookingsPage({
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
   // Fetch all resources
-  const [boats, equipment, oarSets] = await Promise.all([
+  const [boats, equipment, oarSets, squads] = await Promise.all([
     prisma.boat.findMany({
       include: { responsibleSquad: true },
       orderBy: { displayOrder: "asc" },
@@ -34,6 +33,7 @@ export default async function BookingsPage({
       orderBy: [{ type: "asc" }, { number: "asc" }],
     }),
     prisma.oarSet.findMany({ orderBy: { name: "asc" } }),
+    prisma.squad.findMany({ orderBy: { name: "asc" } }),
   ]);
 
   // Fetch bookings for the whole week
@@ -92,29 +92,20 @@ export default async function BookingsPage({
     date: format(b.date, "yyyy-MM-dd"),
   }));
 
+  const allSquads = squads.map((s) => ({ id: s.id, name: s.name }));
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">
-          Boat Bookings — W/C {format(weekStart, "d MMMM yyyy")}
-        </h1>
-        {bookingWeek?.pymbleNotes && (
-          <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-1.5 text-sm text-amber-800">
-            {bookingWeek.pymbleNotes}
-          </div>
-        )}
-      </div>
-
-      <WeekNav weekDays={weekDays} selectedDate={selectedDate} />
-
-      <BookingGrid
-        boats={serializedBoats}
-        equipment={equipment}
-        oarSets={oarSets}
-        bookings={serializedBookings}
-        selectedDate={format(selectedDate, "yyyy-MM-dd")}
-        user={serializedUser}
-      />
-    </div>
+    <BookingsClient
+      boats={serializedBoats}
+      equipment={equipment}
+      oarSets={oarSets}
+      bookings={serializedBookings}
+      initialDate={format(selectedDate, "yyyy-MM-dd")}
+      weekStart={weekStart}
+      weekDays={weekDays}
+      user={serializedUser}
+      squads={allSquads}
+      pymbleNotes={bookingWeek?.pymbleNotes}
+    />
   );
 }

@@ -1,24 +1,22 @@
 "use client";
 
-import { format, isSameDay } from "date-fns";
-import { useRouter } from "next/navigation";
+import { format, isSameDay, parseISO } from "date-fns";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { addDays } from "date-fns";
 
 export function WeekNav({
   weekDays,
   selectedDate,
+  onDayChange,
+  onWeekChange,
 }: {
   weekDays: Date[];
-  selectedDate: Date;
+  selectedDate: string;
+  onDayChange: (date: Date) => void;
+  onWeekChange: (offset: number) => void;
 }) {
-  const router = useRouter();
-
-  function navigateTo(date: Date) {
-    router.push(`/bookings?date=${format(date, "yyyy-MM-dd")}`);
-  }
+  const selected = parseISO(selectedDate);
 
   return (
     <div className="flex items-center gap-2">
@@ -26,7 +24,7 @@ export function WeekNav({
         variant="ghost"
         size="icon"
         className="h-8 w-8"
-        onClick={() => navigateTo(addDays(weekDays[0], -7))}
+        onClick={() => onWeekChange(-7)}
       >
         <ChevronLeft className="h-4 w-4" />
       </Button>
@@ -35,10 +33,10 @@ export function WeekNav({
         {weekDays.map((day) => (
           <button
             key={day.toISOString()}
-            onClick={() => navigateTo(day)}
+            onClick={() => onDayChange(day)}
             className={cn(
               "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-              isSameDay(day, selectedDate)
+              isSameDay(day, selected)
                 ? "bg-blue-600 text-white"
                 : "bg-white border text-gray-700 hover:bg-gray-50"
             )}
@@ -55,7 +53,7 @@ export function WeekNav({
         variant="ghost"
         size="icon"
         className="h-8 w-8"
-        onClick={() => navigateTo(addDays(weekDays[0], 7))}
+        onClick={() => onWeekChange(7)}
       >
         <ChevronRight className="h-4 w-4" />
       </Button>
