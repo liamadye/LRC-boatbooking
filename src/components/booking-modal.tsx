@@ -132,7 +132,7 @@ export function BookingModal({
 
   return (
     <Dialog open onOpenChange={() => onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md w-[calc(100%-2rem)] mx-auto">
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit" : "Book"} {target.resourceName}</DialogTitle>
         </DialogHeader>

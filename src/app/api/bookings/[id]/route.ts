@@ -19,15 +19,15 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const user = await prisma.user.findUnique({
-    where: { email: authUser.email! },
-  });
+  // Parallel: user + booking lookups are independent
+  const [user, booking] = await Promise.all([
+    prisma.user.findUnique({ where: { email: authUser.email! } }),
+    prisma.booking.findUnique({ where: { id } }),
+  ]);
 
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
-
-  const booking = await prisma.booking.findUnique({ where: { id } });
 
   if (!booking) {
     return NextResponse.json({ error: "Booking not found" }, { status: 404 });
@@ -71,15 +71,16 @@ export async function PATCH(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const user = await prisma.user.findUnique({
-    where: { email: authUser.email! },
-  });
+  // Parallel: user + booking lookups are independent
+  const [user, booking] = await Promise.all([
+    prisma.user.findUnique({ where: { email: authUser.email! } }),
+    prisma.booking.findUnique({ where: { id } }),
+  ]);
 
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  const booking = await prisma.booking.findUnique({ where: { id } });
   if (!booking) {
     return NextResponse.json({ error: "Booking not found" }, { status: 404 });
   }
@@ -99,22 +100,24 @@ export async function PATCH(
 
   // Re-run validation if booking a boat
   if (booking.boatId) {
-    const boat = await prisma.boat.findUnique({ where: { id: booking.boatId } });
-    if (boat) {
-      const bookingDate = booking.date;
-      const consecutiveBookings = await prisma.booking.count({
+    // Parallel: boat + consecutive count are independent
+    const [boat, consecutiveBookings] = await Promise.all([
+      prisma.boat.findUnique({ where: { id: booking.boatId } }),
+      prisma.booking.count({
         where: {
-          boatId: boat.id,
+          boatId: booking.boatId,
           id: { not: booking.id },
           date: {
             in: [
-              new Date(bookingDate.getTime() - 86400000),
-              new Date(bookingDate.getTime() + 86400000),
+              new Date(booking.date.getTime() - 86400000),
+              new Date(booking.date.getTime() + 86400000),
             ],
           },
         },
-      });
+      }),
+    ]);
 
+    if (boat) {
       const validationErrors = validateBooking({
         boatType: boat.boatType,
         boatClassification: boat.classification as "black" | "green",
@@ -130,7 +133,7 @@ export async function PATCH(
         userId: user.id,
         userMemberType: user.memberType as "senior_competitive" | "student" | "recreational",
         userHasBlackBoatEligibility: user.hasBlackBoatEligibility,
-        isWeekend: isWeekend(bookingDate),
+        isWeekend: isWeekend(booking.date),
         isRaceSpecific: newIsRaceSpecific,
         existingBookingsOnConsecutiveDays: consecutiveBookings,
       });
@@ -141,27 +144,25 @@ export async function PATCH(
     }
   }
 
-  // Check for slot conflicts if endSlot changed
+  // Check for slot conflicts if endSlot changed — single range overlap query
   if (body.endSlot && body.endSlot !== booking.endSlot) {
     const resourceField = booking.boatId ? "boatId" : booking.equipmentId ? "equipmentId" : "oarSetId";
     const resourceId = booking.boatId ?? booking.equipmentId ?? booking.oarSetId;
 
-    for (let s = booking.startSlot; s <= newEndSlot; s++) {
-      const conflict = await prisma.booking.findFirst({
-        where: {
-          id: { not: booking.id },
-          date: booking.date,
-          [resourceField]: resourceId,
-          startSlot: { lte: s },
-          endSlot: { gte: s },
-        },
-      });
-      if (conflict) {
-        return NextResponse.json(
-          { errors: [{ field: "slot", message: `Slot ${s} is already booked by ${conflict.bookerName}.` }] },
-          { status: 409 }
-        );
-      }
+    const conflict = await prisma.booking.findFirst({
+      where: {
+        id: { not: booking.id },
+        date: booking.date,
+        [resourceField]: resourceId,
+        startSlot: { lte: newEndSlot },
+        endSlot: { gte: booking.startSlot },
+      },
+    });
+    if (conflict) {
+      return NextResponse.json(
+        { errors: [{ field: "slot", message: `This time slot overlaps with a booking by ${conflict.bookerName}.` }] },
+        { status: 409 }
+      );
     }
   }
 

@@ -1,12 +1,14 @@
+import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { can, type Action } from "@/lib/permissions";
 
 /**
  * Get the authenticated user from Supabase + Prisma.
+ * Wrapped with React.cache() to deduplicate within a single request/render pass.
  * Returns null if not authenticated or no DB profile.
  */
-export async function getAuthenticatedUser() {
+export const getAuthenticatedUser = cache(async () => {
   const supabase = await createClient();
   const {
     data: { user: authUser },
@@ -19,7 +21,7 @@ export async function getAuthenticatedUser() {
   });
 
   return user;
-}
+});
 
 /**
  * Require the user to be authenticated and have permission for the given action.

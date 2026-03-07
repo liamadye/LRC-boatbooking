@@ -21,23 +21,23 @@ export function WeekNav({
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1 sm:gap-2">
       <Button
         variant="ghost"
         size="icon"
-        className="h-8 w-8"
+        className="h-8 w-8 flex-shrink-0"
         onClick={() => navigateTo(addDays(weekDays[0], -7))}
       >
         <ChevronLeft className="h-4 w-4" />
       </Button>
 
-      <div className="flex gap-1">
+      <div className="flex gap-0.5 sm:gap-1 overflow-x-auto">
         {weekDays.map((day) => (
           <button
             key={day.toISOString()}
             onClick={() => navigateTo(day)}
             className={cn(
-              "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+              "px-1.5 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors flex-shrink-0",
               isSameDay(day, selectedDate)
                 ? "bg-blue-600 text-white"
                 : "bg-white border text-gray-700 hover:bg-gray-50"
@@ -54,7 +54,7 @@ export function WeekNav({
       <Button
         variant="ghost"
         size="icon"
-        className="h-8 w-8"
+        className="h-8 w-8 flex-shrink-0"
         onClick={() => navigateTo(addDays(weekDays[0], 7))}
       >
         <ChevronRight className="h-4 w-4" />

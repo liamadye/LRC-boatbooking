@@ -1,14 +1,16 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BoatManagement } from "./boat-management";
-import { MemberManagement } from "./member-management";
-import { ApplicationReview } from "./application-review";
-import { InviteManagement } from "./invite-management";
-import { BookingManagement } from "./booking-management";
-import { AuditLogViewer } from "./audit-log-viewer";
-import { SquadManagement } from "./squad-management";
 import type { BoatWithRelations } from "@/lib/types";
+
+const MemberManagement = dynamic(() => import("./member-management").then(m => ({ default: m.MemberManagement })));
+const BookingManagement = dynamic(() => import("./booking-management").then(m => ({ default: m.BookingManagement })));
+const InviteManagement = dynamic(() => import("./invite-management").then(m => ({ default: m.InviteManagement })));
+const ApplicationReview = dynamic(() => import("./application-review").then(m => ({ default: m.ApplicationReview })));
+const AuditLogViewer = dynamic(() => import("./audit-log-viewer").then(m => ({ default: m.AuditLogViewer })));
+const SquadManagement = dynamic(() => import("./squad-management").then(m => ({ default: m.SquadManagement })));
 
 type AdminUser = {
   id: string;
@@ -64,7 +66,7 @@ export function AdminTabs({
 }) {
   return (
     <Tabs defaultValue="boats">
-      <TabsList>
+      <TabsList className="w-full overflow-x-auto flex-wrap sm:flex-nowrap h-auto gap-1">
         <TabsTrigger value="boats">
           Boats ({boats.length})
         </TabsTrigger>

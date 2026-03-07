@@ -200,6 +200,9 @@ model Booking {
   @@unique([date, boatId, startSlot])
   @@unique([date, equipmentId, startSlot])
   @@unique([date, oarSetId, startSlot])
+  @@index([date])
+  @@index([userId])
+  @@index([boatId, date])
   @@map("bookings")
 }
 
@@ -231,6 +234,7 @@ model Invitation {
 
   inviter User @relation("Inviter", fields: [invitedBy], references: [id])
 
+  @@index([email, acceptedAt])
   @@map("invitations")
 }
 
@@ -252,6 +256,7 @@ model BlackBoatApplication {
   applicant User  @relation("Applicant", fields: [userId], references: [id])
   reviewer  User? @relation("Reviewer", fields: [reviewedBy], references: [id])
 
+  @@index([userId, status])
   @@map("black_boat_applications")
 }
 

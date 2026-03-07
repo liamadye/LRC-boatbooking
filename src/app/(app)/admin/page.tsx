@@ -29,6 +29,7 @@ export default async function AdminPage() {
     prisma.invitation.findMany({
       include: { inviter: { select: { fullName: true } } },
       orderBy: { createdAt: "desc" },
+      take: 100,
     }),
   ]);
 

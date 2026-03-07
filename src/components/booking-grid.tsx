@@ -2,15 +2,21 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
 import { TIME_SLOTS, BOAT_SECTIONS, SECTION_COLORS } from "@/lib/constants";
-import { BookingModal } from "@/components/booking-modal";
-import { BookingDetailPopover } from "@/components/booking-detail-popover";
 import { MobileBookingView } from "@/components/mobile-booking-view";
 import { TotalsBar } from "@/components/totals-bar";
 import { ChevronDown, ChevronRight, Circle, Lock, Ban, RefreshCw } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import type { BoatWithRelations, EquipmentItem, OarSetItem, UserProfile } from "@/lib/types";
+
+const BookingModal = dynamic(() =>
+  import("@/components/booking-modal").then((m) => ({ default: m.BookingModal }))
+);
+const BookingDetailPopover = dynamic(() =>
+  import("@/components/booking-detail-popover").then((m) => ({ default: m.BookingDetailPopover }))
+);
 
 type SerializedBooking = {
   id: string;
@@ -60,11 +66,38 @@ export function BookingGrid({
   const [selectedBooking, setSelectedBooking] = useState<SerializedBooking | null>(null);
   const [editingBooking, setEditingBooking] = useState<SerializedBooking | null>(null);
 
+  // Lookup maps for O(1) access
+  const boatMap = useMemo(() => {
+    const m = new Map<string, BoatWithRelations>();
+    boats.forEach((b) => m.set(b.id, b));
+    return m;
+  }, [boats]);
+
+  const equipMap = useMemo(() => {
+    const m = new Map<string, EquipmentItem>();
+    equipment.forEach((e) => m.set(e.id, e));
+    return m;
+  }, [equipment]);
+
+  const oarMap = useMemo(() => {
+    const m = new Map<string, OarSetItem>();
+    oarSets.forEach((o) => m.set(o.id, o));
+    return m;
+  }, [oarSets]);
+
+  // Memoize resource groupings
+  const clubBoats = useMemo(() => boats.filter((b) => b.category === "club"), [boats]);
+  const privateBoats = useMemo(() => boats.filter((b) => b.category === "private"), [boats]);
+  const tinnies = useMemo(() => boats.filter((b) => b.category === "tinny"), [boats]);
+  const ergs = useMemo(() => equipment.filter((e) => e.type === "erg"), [equipment]);
+  const bikes = useMemo(() => equipment.filter((e) => e.type === "bike"), [equipment]);
+  const gyms = useMemo(() => equipment.filter((e) => e.type === "gym"), [equipment]);
+
   function handleEdit(booking: SerializedBooking) {
     const resourceId = booking.boatId ?? booking.equipmentId ?? booking.oarSetId ?? "";
-    const boat = boats.find((b) => b.id === booking.boatId);
-    const equip = equipment.find((e) => e.id === booking.equipmentId);
-    const oar = oarSets.find((o) => o.id === booking.oarSetId);
+    const boat = boatMap.get(booking.boatId ?? "");
+    const equip = equipMap.get(booking.equipmentId ?? "");
+    const oar = oarMap.get(booking.oarSetId ?? "");
     const resourceName = boat?.name ?? (equip ? `${equip.type.charAt(0).toUpperCase() + equip.type.slice(1)} ${equip.number}` : oar?.name ?? "Unknown");
 
     setBookingTarget({
@@ -122,16 +155,7 @@ export function BookingGrid({
     setBookingTarget({ resourceType, resourceId, resourceName, slot });
   }
 
-  // Group club boats by section
-  const clubBoats = boats.filter((b) => b.category === "club");
-  const privateBoats = boats.filter((b) => b.category === "private");
-  const tinnies = boats.filter((b) => b.category === "tinny");
-
-  const ergs = equipment.filter((e) => e.type === "erg");
-  const bikes = equipment.filter((e) => e.type === "bike");
-  const gyms = equipment.filter((e) => e.type === "gym");
-
-  // Calculate totals
+  // Calculate totals using boatMap for O(1) lookup
   const totals = useMemo(() => {
     const inShed: Record<number, number> = {};
     const rowing: Record<number, number> = {};
@@ -142,9 +166,9 @@ export function BookingGrid({
     for (const b of dayBookings) {
       for (let s = b.startSlot; s <= b.endSlot; s++) {
         if (b.resourceType === "boat") {
-          const boat = boats.find((bt) => bt.id === b.boatId);
+          const boat = boatMap.get(b.boatId ?? "");
           if (boat?.category === "tinny") {
-            inShed[s] += b.crewCount; // tinnies count in shed
+            inShed[s] += b.crewCount;
           } else {
             rowing[s] += b.crewCount;
             if (!boat?.isOutside) {
@@ -152,13 +176,12 @@ export function BookingGrid({
             }
           }
         } else {
-          // Equipment bookings count in shed total
           inShed[s] += b.crewCount;
         }
       }
     }
     return { inShed, rowing };
-  }, [dayBookings, boats]);
+  }, [dayBookings, boatMap]);
 
   return (
     <>
@@ -170,9 +193,12 @@ export function BookingGrid({
         boats={boats}
         equipment={equipment}
         oarSets={oarSets}
-        bookings={bookings}
+        dayBookings={dayBookings}
         selectedDate={selectedDate}
         user={user}
+        boatMap={boatMap}
+        equipMap={equipMap}
+        oarMap={oarMap}
         onBookingClick={(booking) => setSelectedBooking(booking)}
         onSlotClick={(type, id, name, slot) =>
           setBookingTarget({ resourceType: type, resourceId: id, resourceName: name, slot })
@@ -201,7 +227,7 @@ export function BookingGrid({
             </tr>
           </thead>
           <tbody>
-            {/* ── Club Boats by section ── */}
+            {/* Club Boats by section */}
             {BOAT_SECTIONS.map((section) => {
               const sectionBoats = clubBoats.filter((b) =>
                 section.types.includes(b.boatType)
@@ -233,7 +259,7 @@ export function BookingGrid({
               );
             })}
 
-            {/* ── Oar Sets ── */}
+            {/* Oar Sets */}
             <SectionGroup>
               <SectionHeader
                 label="Oar Sets"
@@ -257,7 +283,7 @@ export function BookingGrid({
                 ))}
             </SectionGroup>
 
-            {/* ── Private Boats ── */}
+            {/* Private Boats */}
             <SectionGroup>
               <SectionHeader
                 label="Private Boats"
@@ -279,7 +305,7 @@ export function BookingGrid({
                 ))}
             </SectionGroup>
 
-            {/* ── Tinnies ── */}
+            {/* Tinnies */}
             <SectionGroup>
               <SectionHeader
                 label="Tinnies (Coach Boats)"
@@ -301,7 +327,7 @@ export function BookingGrid({
                 ))}
             </SectionGroup>
 
-            {/* ── Equipment ── */}
+            {/* Equipment */}
             <SectionGroup>
               <SectionHeader
                 label="Ergs, Bikes & Gym"
@@ -547,7 +573,6 @@ function RefreshIndicator({ loadedAt }: { loadedAt: string }) {
   function handleRefresh() {
     setRefreshing(true);
     router.refresh();
-    // The page will re-render with new loadedAt, resetting this component
   }
 
   return (

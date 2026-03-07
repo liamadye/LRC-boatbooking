@@ -172,32 +172,30 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ errors: validationErrors }, { status: 400 });
   }
 
-  // Check for conflicts (double booking)
-  for (let s = startSlot; s <= endSlot; s++) {
-    const conflictWhere: Record<string, unknown> = {
-      date: bookingDate,
-      startSlot: { lte: s },
-      endSlot: { gte: s },
-    };
+  // Check for conflicts (double booking) — single range overlap query
+  const conflictWhere: Record<string, unknown> = {
+    date: bookingDate,
+    startSlot: { lte: endSlot },
+    endSlot: { gte: startSlot },
+  };
 
-    if (resourceType === "boat") conflictWhere.boatId = resourceId;
-    else if (resourceType === "equipment") conflictWhere.equipmentId = resourceId;
-    else if (resourceType === "oar_set") conflictWhere.oarSetId = resourceId;
+  if (resourceType === "boat") conflictWhere.boatId = resourceId;
+  else if (resourceType === "equipment") conflictWhere.equipmentId = resourceId;
+  else if (resourceType === "oar_set") conflictWhere.oarSetId = resourceId;
 
-    const conflict = await prisma.booking.findFirst({ where: conflictWhere });
-    if (conflict) {
-      return NextResponse.json(
-        {
-          errors: [
-            {
-              field: "slot",
-              message: `Slot ${s} is already booked by ${conflict.bookerName}.`,
-            },
-          ],
-        },
-        { status: 409 }
-      );
-    }
+  const conflict = await prisma.booking.findFirst({ where: conflictWhere });
+  if (conflict) {
+    return NextResponse.json(
+      {
+        errors: [
+          {
+            field: "slot",
+            message: `This time slot overlaps with a booking by ${conflict.bookerName}.`,
+          },
+        ],
+      },
+      { status: 409 }
+    );
   }
 
   // Create booking
