@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { addDays } from "date-fns";
 import { createRateLimiter } from "@/lib/rate-limit";
 import { logAudit } from "@/lib/audit";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 const inviteLimiter = createRateLimiter({ windowMs: 60_000, maxRequests: 10 });
 
@@ -83,5 +85,29 @@ export async function POST(request: NextRequest) {
     after: { email, role: invitation.role, memberType: invitation.memberType },
   });
 
-  return NextResponse.json(invitation, { status: 201 });
+  // Send invite email via Supabase
+  let emailSent = false;
+  const adminClient = createAdminClient();
+  if (adminClient) {
+    const headersList = await headers();
+    const host = headersList.get("host") ?? "localhost:3000";
+    const protocol = host.startsWith("localhost") ? "http" : "https";
+    const origin = `${protocol}://${host}`;
+    const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(`/register?token=${invitation.token}`)}`;
+
+    const { error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
+      redirectTo,
+      data: { invitation_token: invitation.token },
+    });
+
+    if (inviteError) {
+      console.error("[invite] Supabase invite email failed:", inviteError.message);
+    } else {
+      emailSent = true;
+    }
+  } else {
+    console.warn("[invite] SUPABASE_SERVICE_ROLE_KEY not set — invite email not sent");
+  }
+
+  return NextResponse.json({ ...invitation, emailSent }, { status: 201 });
 }
