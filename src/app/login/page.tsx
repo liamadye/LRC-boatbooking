@@ -134,6 +134,17 @@ export default function LoginPage() {
             </Button>
           </form>
 
+          {mode === "login" && (
+            <p className="text-center">
+              <a
+                href="/reset-password"
+                className="text-sm underline text-muted-foreground hover:text-foreground"
+              >
+                Forgot your password?
+              </a>
+            </p>
+          )}
+
           <p className="text-center text-sm text-muted-foreground">
             {mode === "login" ? (
               <>
