@@ -9,18 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Copy, RefreshCw, Trash2 } from "lucide-react";
-
-type Invitation = {
-  id: string;
-  email: string;
-  token: string;
-  role: string;
-  memberType: string;
-  acceptedAt: string | null;
-  expiresAt: string;
-  createdAt: string;
-  inviter: { fullName: string };
-};
+import type { InvitationSummary, SquadSummary } from "@/lib/types";
 
 type InviteLinkResponse = {
   inviteUrl: string;
@@ -29,15 +18,18 @@ type InviteLinkResponse = {
 
 export function InviteManagement({
   invitations,
+  squads,
 }: {
-  invitations: Invitation[];
+  invitations: InvitationSummary[];
+  squads: SquadSummary[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
-  const [inviteRows, setInviteRows] = useState<Invitation[]>(invitations);
+  const [inviteRows, setInviteRows] = useState<InvitationSummary[]>(invitations);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("member");
   const [memberType, setMemberType] = useState("recreational");
+  const [selectedSquadIds, setSelectedSquadIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
@@ -52,7 +44,7 @@ export function InviteManagement({
     const res = await fetch("/api/admin/invitations", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, role, memberType }),
+      body: JSON.stringify({ email, role, memberType, squadIds: selectedSquadIds }),
     });
 
     const data = await res.json();
@@ -70,13 +62,22 @@ export function InviteManagement({
         await navigator.clipboard.writeText(data.inviteUrl);
       }
       setEmail("");
+      setSelectedSquadIds([]);
       router.refresh();
     }
 
     setLoading(false);
   }
 
-  async function copyLink(invitation: Invitation) {
+  function toggleSquad(squadId: string) {
+    setSelectedSquadIds((prev) =>
+      prev.includes(squadId)
+        ? prev.filter((id) => id !== squadId)
+        : [...prev, squadId]
+    );
+  }
+
+  async function copyLink(invitation: InvitationSummary) {
     const res = await fetch(`/api/admin/invitations/${invitation.id}`);
     const data = (await res.json()) as InviteLinkResponse & { error?: string };
 
@@ -99,7 +100,7 @@ export function InviteManagement({
     });
   }
 
-  async function resendInvitation(invitation: Invitation) {
+  async function resendInvitation(invitation: InvitationSummary) {
     setActionLoadingId(`resend:${invitation.id}`);
     const res = await fetch(`/api/admin/invitations/${invitation.id}`, {
       method: "POST",
@@ -118,7 +119,7 @@ export function InviteManagement({
 
     await navigator.clipboard.writeText(data.inviteUrl);
     setInviteRows((prev) =>
-      prev.map((inv) => (inv.id === invitation.id ? (data as Invitation) : inv))
+      prev.map((inv) => (inv.id === invitation.id ? (data as InvitationSummary) : inv))
     );
     toast({
       title: "Invitation renewed",
@@ -131,7 +132,7 @@ export function InviteManagement({
     router.refresh();
   }
 
-  async function deleteInvitation(invitation: Invitation) {
+  async function deleteInvitation(invitation: InvitationSummary) {
     const confirmed = window.confirm(
       `Delete invitation for ${invitation.email}? This cannot be undone.`
     );
@@ -213,6 +214,26 @@ export function InviteManagement({
         </Button>
       </form>
 
+      <div className="space-y-2">
+        <Label>Assign Squads</Label>
+        <div className="flex flex-wrap gap-2">
+          {squads.map((squad) => (
+            <button
+              key={squad.id}
+              type="button"
+              onClick={() => toggleSquad(squad.id)}
+              className={`px-2 py-1 rounded text-xs border transition-colors ${
+                selectedSquadIds.includes(squad.id)
+                  ? "bg-blue-100 border-blue-300 text-blue-800"
+                  : "bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100"
+              }`}
+            >
+              {squad.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {pending.length > 0 && (
         <div>
           <h3 className="text-sm font-semibold text-muted-foreground mb-2">
@@ -230,6 +251,11 @@ export function InviteManagement({
                       <Badge variant="secondary" className="text-[10px]">
                         {inv.memberType.replace("_", " ")}
                       </Badge>
+                      {inv.squads.map((squad) => (
+                        <Badge key={squad.id} variant="outline" className="ml-1 text-[10px]">
+                          {squad.name}
+                        </Badge>
+                      ))}
                       {" "}— Expires {new Date(inv.expiresAt).toLocaleDateString()}
                     </div>
                   </div>
@@ -282,6 +308,11 @@ export function InviteManagement({
                     <div className="font-medium">{inv.email}</div>
                     <div className="text-xs text-muted-foreground">
                       Accepted {new Date(inv.acceptedAt!).toLocaleDateString()}
+                      {inv.squads.map((squad) => (
+                        <Badge key={squad.id} variant="outline" className="ml-1 text-[10px]">
+                          {squad.name}
+                        </Badge>
+                      ))}
                     </div>
                   </div>
                   <Badge variant="default" className="bg-green-600">Accepted</Badge>
@@ -301,7 +332,18 @@ export function InviteManagement({
             {expired.map((inv) => (
               <Card key={inv.id}>
                 <CardContent className="flex items-center justify-between py-3">
-                  <div className="font-medium text-muted-foreground">{inv.email}</div>
+                  <div>
+                    <div className="font-medium text-muted-foreground">{inv.email}</div>
+                    {inv.squads.length > 0 && (
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {inv.squads.map((squad) => (
+                          <Badge key={squad.id} variant="outline" className="mr-1 text-[10px]">
+                            {squad.name}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <div className="flex items-center gap-1">
                     <Badge variant="secondary">Expired</Badge>
                     <Button

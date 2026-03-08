@@ -1,58 +1,221 @@
 "use client";
 
-import { format, parseISO } from "date-fns";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { addDays, format, parseISO } from "date-fns";
 import { WeekNav } from "@/components/week-nav";
 import { BookingGrid } from "@/components/booking-grid";
-import type { BoatWithRelations, EquipmentItem, OarSetItem, UserProfile } from "@/lib/types";
+import { useToast } from "@/hooks/use-toast";
+import { getWeekStartKey } from "@/lib/booking-utils";
+import type {
+  BoatWithRelations,
+  BookingWeekPayload,
+  EquipmentItem,
+  OarSetItem,
+  SerializedBooking,
+  UserProfile,
+} from "@/lib/types";
 
-type SerializedBooking = {
-  id: string;
-  date: string;
-  resourceType: string;
-  boatId: string | null;
-  equipmentId: string | null;
-  oarSetId: string | null;
-  userId: string;
-  bookerName: string;
-  crewCount: number;
-  startSlot: number;
-  endSlot: number;
-  isRaceSpecific: boolean;
-  notes: string | null;
+type Props = {
+  boats: BoatWithRelations[];
+  equipment: EquipmentItem[];
+  oarSets: OarSetItem[];
+  initialSelectedDate: string;
+  initialWeekData: BookingWeekPayload;
+  user: UserProfile;
 };
+
+function sortBookings(bookings: SerializedBooking[]) {
+  return [...bookings].sort((a, b) => {
+    if (a.date !== b.date) return a.date.localeCompare(b.date);
+    if (a.startSlot !== b.startSlot) return a.startSlot - b.startSlot;
+    return a.id.localeCompare(b.id);
+  });
+}
 
 export function BookingsClient({
   boats,
   equipment,
   oarSets,
-  bookings,
-  initialDate,
-  weekStart,
-  weekDays,
+  initialSelectedDate,
+  initialWeekData,
   user,
-  pymbleNotes,
-}: {
-  boats: BoatWithRelations[];
-  equipment: EquipmentItem[];
-  oarSets: OarSetItem[];
-  bookings: SerializedBooking[];
-  initialDate: string;
-  weekStart: Date;
-  weekDays: Date[];
-  user: UserProfile;
-  pymbleNotes?: string | null;
-}) {
-  const selectedDateObj = parseISO(initialDate);
+}: Props) {
+  const { toast } = useToast();
+  const [selectedDate, setSelectedDate] = useState(initialSelectedDate);
+  const [weekData, setWeekData] = useState(initialWeekData);
+  const [loadedAt, setLoadedAt] = useState(new Date().toISOString());
+  const [loadingWeek, setLoadingWeek] = useState(false);
+  const cacheRef = useRef(new Map<string, BookingWeekPayload>([
+    [initialWeekData.weekStart, initialWeekData],
+  ]));
+  const requestIdRef = useRef(0);
+
+  const selectedDateObj = useMemo(() => parseISO(selectedDate), [selectedDate]);
+  const weekStartObj = useMemo(() => parseISO(weekData.weekStart), [weekData.weekStart]);
+  const weekDays = useMemo(
+    () => Array.from({ length: 7 }, (_, index) => addDays(weekStartObj, index)),
+    [weekStartObj]
+  );
+
+  const updateUrl = useCallback((nextDate: string) => {
+    window.history.replaceState(null, "", `/bookings?date=${nextDate}`);
+  }, []);
+
+  const fetchWeekData = useCallback(async (weekStart: string) => {
+    const res = await fetch(`/api/bookings?weekStart=${weekStart}`, {
+      cache: "no-store",
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error ?? "Failed to load bookings");
+    }
+
+    const payload = data as BookingWeekPayload;
+    cacheRef.current.set(weekStart, payload);
+    return payload;
+  }, []);
+
+  const prefetchAdjacentWeeks = useCallback(
+    async (currentWeekStart: string) => {
+      const current = parseISO(currentWeekStart);
+      const adjacent = [
+        format(addDays(current, -7), "yyyy-MM-dd"),
+        format(addDays(current, 7), "yyyy-MM-dd"),
+      ];
+
+      await Promise.all(
+        adjacent.map(async (weekStart) => {
+          if (cacheRef.current.has(weekStart)) {
+            return;
+          }
+
+          try {
+            await fetchWeekData(weekStart);
+          } catch {
+            // Ignore background prefetch failures.
+          }
+        })
+      );
+    },
+    [fetchWeekData]
+  );
+
+  useEffect(() => {
+    prefetchAdjacentWeeks(weekData.weekStart).catch(() => undefined);
+  }, [prefetchAdjacentWeeks, weekData.weekStart]);
+
+  const refreshCurrentWeek = useCallback(async () => {
+    setLoadingWeek(true);
+    const requestId = ++requestIdRef.current;
+
+    try {
+      const fresh = await fetchWeekData(weekData.weekStart);
+      if (requestId !== requestIdRef.current) {
+        return;
+      }
+      setWeekData(fresh);
+      setLoadedAt(new Date().toISOString());
+    } catch (error) {
+      toast({
+        title: "Failed to refresh bookings",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      if (requestId === requestIdRef.current) {
+        setLoadingWeek(false);
+      }
+    }
+  }, [fetchWeekData, toast, weekData.weekStart]);
+
+  const handleSelectDate = useCallback(
+    async (nextDate: Date) => {
+      const nextDateString = format(nextDate, "yyyy-MM-dd");
+      const previousDate = selectedDate;
+      setSelectedDate(nextDateString);
+      updateUrl(nextDateString);
+
+      const nextWeekStart = getWeekStartKey(nextDate);
+      if (nextWeekStart === weekData.weekStart) {
+        return;
+      }
+
+      const cached = cacheRef.current.get(nextWeekStart);
+      if (cached) {
+        setWeekData(cached);
+        setLoadedAt(new Date().toISOString());
+        return;
+      }
+
+      setLoadingWeek(true);
+      const requestId = ++requestIdRef.current;
+
+      try {
+        const fresh = await fetchWeekData(nextWeekStart);
+        if (requestId !== requestIdRef.current) {
+          return;
+        }
+        setWeekData(fresh);
+        setLoadedAt(new Date().toISOString());
+      } catch (error) {
+        setSelectedDate(previousDate);
+        updateUrl(previousDate);
+        toast({
+          title: "Failed to load bookings",
+          description: error instanceof Error ? error.message : "Unknown error",
+          variant: "destructive",
+        });
+      } finally {
+        if (requestId === requestIdRef.current) {
+          setLoadingWeek(false);
+        }
+      }
+    },
+    [fetchWeekData, selectedDate, toast, updateUrl, weekData.weekStart]
+  );
+
+  const applyBookingChange = useCallback(
+    (updater: (current: SerializedBooking[]) => SerializedBooking[]) => {
+      setWeekData((current) => {
+        const next = {
+          ...current,
+          bookings: sortBookings(updater(current.bookings)),
+        };
+        cacheRef.current.set(current.weekStart, next);
+        return next;
+      });
+      setLoadedAt(new Date().toISOString());
+    },
+    []
+  );
+
+  const handleBookingSaved = useCallback(
+    (booking: SerializedBooking) => {
+      applyBookingChange((current) => {
+        const remaining = current.filter((entry) => entry.id !== booking.id);
+        return [...remaining, booking];
+      });
+    },
+    [applyBookingChange]
+  );
+
+  const handleBookingDeleted = useCallback(
+    (bookingId: string) => {
+      applyBookingChange((current) => current.filter((entry) => entry.id !== bookingId));
+    },
+    [applyBookingChange]
+  );
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">
-          Boat Bookings — W/C {format(weekStart, "d MMMM yyyy")}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <h1 className="text-lg sm:text-xl font-bold">
+          Bookings — W/C {format(weekStartObj, "d MMM yyyy")}
         </h1>
-        {pymbleNotes && (
+        {weekData.bookingWeek?.pymbleNotes && (
           <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-1.5 text-sm text-amber-800">
-            {pymbleNotes}
+            {weekData.bookingWeek.pymbleNotes}
           </div>
         )}
       </div>
@@ -60,15 +223,22 @@ export function BookingsClient({
       <WeekNav
         weekDays={weekDays}
         selectedDate={selectedDateObj}
+        onSelectDate={handleSelectDate}
+        loading={loadingWeek}
       />
 
       <BookingGrid
         boats={boats}
         equipment={equipment}
         oarSets={oarSets}
-        bookings={bookings}
-        selectedDate={initialDate}
+        bookings={weekData.bookings}
+        selectedDate={selectedDate}
         user={user}
+        loadedAt={loadedAt}
+        onRefresh={refreshCurrentWeek}
+        refreshing={loadingWeek}
+        onBookingSaved={handleBookingSaved}
+        onBookingDeleted={handleBookingDeleted}
       />
     </div>
   );

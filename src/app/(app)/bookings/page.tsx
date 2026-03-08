@@ -1,9 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import { getAuthenticatedUser } from "@/lib/auth";
-import { BookingGrid } from "@/components/booking-grid";
-import { WeekNav } from "@/components/week-nav";
 import { startOfWeek, addDays, format, parseISO } from "date-fns";
+import { BookingsClient } from "@/components/bookings-client";
+import { buildBookingWeekPayload } from "@/lib/booking-utils";
 
 export default async function BookingsPage({
   searchParams,
@@ -19,10 +19,8 @@ export default async function BookingsPage({
 
   // Get Monday of the selected week
   const weekStart = startOfWeek(selectedDate, { weekStartsOn: 1 });
-  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
-
-  // Fetch everything in parallel — all 6 queries are independent
-  const [boats, equipment, oarSets, bookings, userProfile, bookingWeek] =
+  // Fetch everything in parallel — static data once, week data once.
+  const [boats, equipment, oarSets, userProfile, bookings, bookingWeek] =
     await Promise.all([
       prisma.boat.findMany({
         include: { responsibleSquad: true },
@@ -32,17 +30,19 @@ export default async function BookingsPage({
         orderBy: [{ type: "asc" }, { number: "asc" }],
       }),
       prisma.oarSet.findMany({ orderBy: { name: "asc" } }),
-      prisma.booking.findMany({
-        where: {
-          date: { gte: weekStart, lte: addDays(weekStart, 6) },
-        },
-      }),
       getAuthenticatedUser().then(async (user) => {
         if (!user) return null;
         return prisma.user.findUnique({
           where: { id: user.id },
           include: { squads: { include: { squad: true } } },
         });
+      }),
+      prisma.booking.findMany({
+        where: {
+          date: { gte: weekStart, lte: addDays(weekStart, 6) },
+        },
+        include: { squad: { select: { id: true, name: true } } },
+        orderBy: [{ date: "asc" }, { startSlot: "asc" }],
       }),
       prisma.bookingWeek.findUnique({ where: { weekStart } }),
     ]);
@@ -71,35 +71,20 @@ export default async function BookingsPage({
     })),
   };
 
-  const serializedBookings = bookings.map((b) => ({
-    ...b,
-    date: format(b.date, "yyyy-MM-dd"),
-  }));
+  const initialWeekData = buildBookingWeekPayload({
+    bookings,
+    bookingWeek,
+    weekStart,
+  });
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <h1 className="text-lg sm:text-xl font-bold">
-          Bookings — W/C {format(weekStart, "d MMM yyyy")}
-        </h1>
-        {bookingWeek?.pymbleNotes && (
-          <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-1.5 text-sm text-amber-800">
-            {bookingWeek.pymbleNotes}
-          </div>
-        )}
-      </div>
-
-      <WeekNav weekDays={weekDays} selectedDate={selectedDate} />
-
-      <BookingGrid
+      <BookingsClient
         boats={serializedBoats}
         equipment={equipment}
         oarSets={oarSets}
-        bookings={serializedBookings}
-        selectedDate={format(selectedDate, "yyyy-MM-dd")}
+        initialSelectedDate={format(selectedDate, "yyyy-MM-dd")}
+        initialWeekData={initialWeekData}
         user={serializedUser}
-        loadedAt={new Date().toISOString()}
       />
-    </div>
   );
 }

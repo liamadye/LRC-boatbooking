@@ -1,65 +1,80 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { createClient } from "@/lib/supabase/server";
-
-async function requireAdmin() {
-  const supabase = await createClient();
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
-
-  if (!authUser) return null;
-
-  const user = await prisma.user.findUnique({
-    where: { email: authUser.email! },
-  });
-
-  const adminRoles = ["admin", "captain", "vice_captain"];
-  if (!user || !adminRoles.includes(user.role)) return null;
-
-  return user;
-}
+import { requirePermission } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
+import {
+  createInvitationRecord,
+  deliverInvitation,
+  serializeInvitation,
+} from "@/lib/admin-invitations";
 
 export async function POST(request: NextRequest) {
-  const admin = await requireAdmin();
+  const admin = await requirePermission("send_invites");
   if (!admin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const body = await request.json();
-  const { email, fullName, memberType, role, squadIds } = body;
+  const {
+    email,
+    role = "member",
+    memberType = "recreational",
+    squadIds = [],
+  } = body as {
+    email?: string;
+    role?: "member" | "squad_captain" | "vice_captain" | "captain" | "admin";
+    memberType?: "senior_competitive" | "student" | "recreational";
+    squadIds?: string[];
+  };
 
-  if (!email || !fullName) {
+  if (!email) {
+    return NextResponse.json({ error: "Email is required" }, { status: 400 });
+  }
+
+  let invitationResult;
+  try {
+    invitationResult = await createInvitationRecord({
+      email,
+      role,
+      memberType,
+      invitedBy: admin.id,
+      squadIds,
+    });
+  } catch (error) {
     return NextResponse.json(
-      { error: "Email and full name are required" },
+      { error: error instanceof Error ? error.message : "Failed to create invitation" },
       { status: 400 }
     );
   }
 
-  // Check if user already exists
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) {
+  if ("error" in invitationResult) {
     return NextResponse.json(
-      { error: "A user with this email already exists" },
-      { status: 409 }
+      { error: invitationResult.error },
+      { status: invitationResult.status }
     );
   }
 
-  // Create user profile (they'll complete auth on first login via Supabase)
-  const user = await prisma.user.create({
-    data: {
+  const { invitation } = invitationResult;
+
+  await logAudit({
+    userId: admin.id,
+    action: "invitation.send",
+    targetType: "invitation",
+    targetId: invitation.id,
+    after: {
       email,
-      fullName,
-      memberType: memberType || "recreational",
-      role: role || "member",
-      squads: squadIds?.length
-        ? {
-            create: squadIds.map((squadId: string) => ({ squadId })),
-          }
-        : undefined,
+      role: invitation.role,
+      memberType: invitation.memberType,
+      squadIds: invitation.invitationSquads.map((entry) => entry.squad.id),
     },
-    include: { squads: { include: { squad: true } } },
   });
 
-  return NextResponse.json(user, { status: 201 });
+  const { emailSent, inviteUrl } = await deliverInvitation({
+    email,
+    token: invitation.token,
+  });
+
+  return NextResponse.json(
+    { ...serializeInvitation(invitation), emailSent, inviteUrl },
+    { status: 201 }
+  );
 }

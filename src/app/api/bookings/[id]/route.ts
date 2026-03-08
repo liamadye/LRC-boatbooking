@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { validateBooking, isWeekend } from "@/lib/validation";
 import { can } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
+import { serializeBooking, supportsSquadBooking } from "@/lib/booking-utils";
 
 export async function DELETE(
   request: NextRequest,
@@ -21,7 +22,10 @@ export async function DELETE(
 
   // Parallel: user + booking lookups are independent
   const [user, booking] = await Promise.all([
-    prisma.user.findUnique({ where: { email: authUser.email! } }),
+    prisma.user.findUnique({
+      where: { email: authUser.email! },
+      include: { squads: { include: { squad: true } } },
+    }),
     prisma.booking.findUnique({ where: { id } }),
   ]);
 
@@ -73,7 +77,10 @@ export async function PATCH(
 
   // Parallel: user + booking lookups are independent
   const [user, booking] = await Promise.all([
-    prisma.user.findUnique({ where: { email: authUser.email! } }),
+    prisma.user.findUnique({
+      where: { email: authUser.email! },
+      include: { squads: { include: { squad: true } } },
+    }),
     prisma.booking.findUnique({ where: { id } }),
   ]);
 
@@ -97,6 +104,9 @@ export async function PATCH(
   const newEndSlot = body.endSlot ?? booking.endSlot;
   const newCrewCount = body.crewCount ?? booking.crewCount;
   const newIsRaceSpecific = body.isRaceSpecific ?? booking.isRaceSpecific;
+  const hasExplicitSquadChange = Object.prototype.hasOwnProperty.call(body, "squadId");
+  const nextSquadId = hasExplicitSquadChange ? body.squadId ?? null : booking.squadId;
+  let bookingSquad = null;
 
   // Re-run validation if booking a boat
   if (booking.boatId) {
@@ -118,6 +128,23 @@ export async function PATCH(
     ]);
 
     if (boat) {
+      if (nextSquadId) {
+        if (!supportsSquadBooking(boat.boatType)) {
+          return NextResponse.json(
+            { error: "Squad bookings are only available for 4s and 8s." },
+            { status: 400 }
+          );
+        }
+
+        bookingSquad = user.squads.find((entry) => entry.squad.id === nextSquadId)?.squad ?? null;
+        if (!bookingSquad) {
+          return NextResponse.json(
+            { error: "You can only book on behalf of a squad you belong to." },
+            { status: 403 }
+          );
+        }
+      }
+
       const validationErrors = validateBooking({
         boatType: boat.boatType,
         boatClassification: boat.classification as "black" | "green",
@@ -143,6 +170,11 @@ export async function PATCH(
         return NextResponse.json({ errors: validationErrors }, { status: 400 });
       }
     }
+  } else if (nextSquadId) {
+    return NextResponse.json(
+      { error: "Squad bookings are only available for boats." },
+      { status: 400 }
+    );
   }
 
   // Check for slot conflicts if endSlot changed — single range overlap query
@@ -167,17 +199,26 @@ export async function PATCH(
     }
   }
 
+  let nextBookerName = body.bookerName ?? booking.bookerName;
+  if (bookingSquad) {
+    nextBookerName = bookingSquad.name;
+  } else if (hasExplicitSquadChange && !nextSquadId && !body.bookerName) {
+    nextBookerName = user.fullName;
+  }
+
   const updatedBooking = await prisma.booking.update({
     where: { id },
     data: {
-      bookerName: body.bookerName ?? booking.bookerName,
+      squadId: nextSquadId,
+      bookerName: nextBookerName,
       crewCount: newCrewCount,
       endSlot: newEndSlot,
       isRaceSpecific: newIsRaceSpecific,
       raceDetails: body.raceDetails ?? booking.raceDetails,
       notes: body.notes ?? booking.notes,
     },
+    include: { squad: { select: { id: true, name: true } } },
   });
 
-  return NextResponse.json(updatedBooking);
+  return NextResponse.json(serializeBooking(updatedBooking));
 }

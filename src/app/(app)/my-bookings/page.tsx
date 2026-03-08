@@ -4,10 +4,12 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { getBookingDisplayName } from "@/lib/booking-utils";
 import { useToast } from "@/hooks/use-toast";
 import { TIME_SLOTS } from "@/lib/constants";
 import { format } from "date-fns";
 import { Trash2 } from "lucide-react";
+import type { SquadSummary } from "@/lib/types";
 
 type Booking = {
   id: string;
@@ -16,12 +18,14 @@ type Booking = {
   boatId: string | null;
   equipmentId: string | null;
   oarSetId: string | null;
+  squadId: string | null;
   bookerName: string;
   crewCount: number;
   startSlot: number;
   endSlot: number;
   isRaceSpecific: boolean;
   notes: string | null;
+  squad: SquadSummary | null;
   boat?: { name: string; boatType: string } | null;
 };
 
@@ -84,6 +88,9 @@ export default function MyBookingsPage() {
                   {booking.isRaceSpecific && (
                     <Badge className="ml-2">Race</Badge>
                   )}
+                  {booking.squad && (
+                    <Badge variant="outline" className="ml-2">Squad</Badge>
+                  )}
                 </div>
                 <div className="text-sm text-muted-foreground">
                   {format(new Date(booking.date), "EEE d MMM yyyy")} —{" "}
@@ -93,7 +100,7 @@ export default function MyBookingsPage() {
                   )}
                 </div>
                 <div className="text-sm text-muted-foreground">
-                  {booking.bookerName} — {booking.crewCount} in boat
+                  {getBookingDisplayName(booking)} — {booking.crewCount} in boat
                   {booking.notes && <> — {booking.notes}</>}
                 </div>
               </div>

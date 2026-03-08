@@ -3,13 +3,20 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
+import { getBookingDisplayName } from "@/lib/booking-utils";
 import { cn } from "@/lib/utils";
 import { TIME_SLOTS, BOAT_SECTIONS, SECTION_COLORS } from "@/lib/constants";
 import { MobileBookingView } from "@/components/mobile-booking-view";
 import { TotalsBar } from "@/components/totals-bar";
 import { ChevronDown, ChevronRight, Circle, Lock, Ban, RefreshCw } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import type { BoatWithRelations, EquipmentItem, OarSetItem, UserProfile } from "@/lib/types";
+import type {
+  BoatWithRelations,
+  EquipmentItem,
+  OarSetItem,
+  SerializedBooking,
+  UserProfile,
+} from "@/lib/types";
 
 const BookingModal = dynamic(() =>
   import("@/components/booking-modal").then((m) => ({ default: m.BookingModal }))
@@ -17,23 +24,6 @@ const BookingModal = dynamic(() =>
 const BookingDetailPopover = dynamic(() =>
   import("@/components/booking-detail-popover").then((m) => ({ default: m.BookingDetailPopover }))
 );
-
-type SerializedBooking = {
-  id: string;
-  date: string;
-  resourceType: string;
-  boatId: string | null;
-  equipmentId: string | null;
-  oarSetId: string | null;
-  userId: string;
-  bookerName: string;
-  crewCount: number;
-  startSlot: number;
-  endSlot: number;
-  isRaceSpecific: boolean;
-  raceDetails?: string | null;
-  notes: string | null;
-};
 
 type Props = {
   boats: BoatWithRelations[];
@@ -43,6 +33,10 @@ type Props = {
   selectedDate: string;
   user: UserProfile;
   loadedAt?: string;
+  onRefresh?: () => Promise<void> | void;
+  refreshing?: boolean;
+  onBookingSaved?: (booking: SerializedBooking) => void;
+  onBookingDeleted?: (bookingId: string) => void;
 };
 
 type BookingTarget = {
@@ -60,11 +54,24 @@ export function BookingGrid({
   selectedDate,
   user,
   loadedAt,
+  onRefresh,
+  refreshing = false,
+  onBookingSaved,
+  onBookingDeleted,
 }: Props) {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [bookingTarget, setBookingTarget] = useState<BookingTarget | null>(null);
   const [selectedBooking, setSelectedBooking] = useState<SerializedBooking | null>(null);
   const [editingBooking, setEditingBooking] = useState<SerializedBooking | null>(null);
+
+  useEffect(() => {
+    setSelectedBooking((current) =>
+      current ? bookings.find((booking) => booking.id === current.id) ?? null : null
+    );
+    setEditingBooking((current) =>
+      current ? bookings.find((booking) => booking.id === current.id) ?? null : null
+    );
+  }, [bookings]);
 
   // Lookup maps for O(1) access
   const boatMap = useMemo(() => {
@@ -185,7 +192,13 @@ export function BookingGrid({
 
   return (
     <>
-      {loadedAt && <RefreshIndicator loadedAt={loadedAt} />}
+      {loadedAt && (
+        <RefreshIndicator
+          loadedAt={loadedAt}
+          onRefresh={onRefresh}
+          refreshing={refreshing}
+        />
+      )}
       <TotalsBar inShed={totals.inShed} rowing={totals.rowing} />
 
       {/* Mobile view */}
@@ -389,6 +402,9 @@ export function BookingGrid({
           user={user}
           boats={boats}
           editingBooking={editingBooking ?? undefined}
+          onSaved={(booking) => {
+            onBookingSaved?.(booking);
+          }}
           onClose={() => { setBookingTarget(null); setEditingBooking(null); }}
         />
       )}
@@ -401,6 +417,10 @@ export function BookingGrid({
           oarSets={oarSets}
           user={user}
           onClose={() => setSelectedBooking(null)}
+          onDeleted={(bookingId) => {
+            onBookingDeleted?.(bookingId);
+            setSelectedBooking(null);
+          }}
           onEdit={handleEdit}
         />
       )}
@@ -555,10 +575,17 @@ function ResourceRow({
   );
 }
 
-function RefreshIndicator({ loadedAt }: { loadedAt: string }) {
+function RefreshIndicator({
+  loadedAt,
+  onRefresh,
+  refreshing = false,
+}: {
+  loadedAt: string;
+  onRefresh?: () => Promise<void> | void;
+  refreshing?: boolean;
+}) {
   const router = useRouter();
   const [label, setLabel] = useState("");
-  const [refreshing, setRefreshing] = useState(false);
 
   const updateLabel = useCallback(() => {
     setLabel(formatDistanceToNow(new Date(loadedAt), { addSuffix: true }));
@@ -571,7 +598,11 @@ function RefreshIndicator({ loadedAt }: { loadedAt: string }) {
   }, [updateLabel]);
 
   function handleRefresh() {
-    setRefreshing(true);
+    if (onRefresh) {
+      void onRefresh();
+      return;
+    }
+
     router.refresh();
   }
 
@@ -629,7 +660,7 @@ function BookingCell({
             "text-xs font-medium truncate",
             isOwn ? "text-blue-800" : "text-gray-700"
           )}>
-            {booking.bookerName} ({booking.crewCount})
+            {getBookingDisplayName(booking)} ({booking.crewCount})
           </span>
         </button>
       </td>

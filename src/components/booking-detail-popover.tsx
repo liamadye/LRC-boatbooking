@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   Dialog,
   DialogContent,
@@ -11,26 +10,16 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { TIME_SLOTS } from "@/lib/constants";
+import { getBookingDisplayName } from "@/lib/booking-utils";
 import { useToast } from "@/hooks/use-toast";
 import { can } from "@/lib/permissions";
-import type { BoatWithRelations, EquipmentItem, OarSetItem, UserProfile } from "@/lib/types";
-
-type SerializedBooking = {
-  id: string;
-  date: string;
-  resourceType: string;
-  boatId: string | null;
-  equipmentId: string | null;
-  oarSetId: string | null;
-  userId: string;
-  bookerName: string;
-  crewCount: number;
-  startSlot: number;
-  endSlot: number;
-  isRaceSpecific: boolean;
-  raceDetails?: string | null;
-  notes: string | null;
-};
+import type {
+  BoatWithRelations,
+  EquipmentItem,
+  OarSetItem,
+  SerializedBooking,
+  UserProfile,
+} from "@/lib/types";
 
 export function BookingDetailPopover({
   booking,
@@ -39,6 +28,7 @@ export function BookingDetailPopover({
   oarSets,
   user,
   onClose,
+  onDeleted,
   onEdit,
 }: {
   booking: SerializedBooking;
@@ -47,9 +37,9 @@ export function BookingDetailPopover({
   oarSets: OarSetItem[];
   user: UserProfile;
   onClose: () => void;
+  onDeleted?: (bookingId: string) => void;
   onEdit?: (booking: SerializedBooking) => void;
 }) {
-  const router = useRouter();
   const { toast } = useToast();
   const [cancelling, setCancelling] = useState(false);
 
@@ -75,8 +65,8 @@ export function BookingDetailPopover({
 
     if (res.ok) {
       toast({ title: "Booking cancelled" });
+      onDeleted?.(booking.id);
       onClose();
-      router.refresh();
     } else {
       toast({ title: "Failed to cancel booking", variant: "destructive" });
     }
@@ -94,7 +84,7 @@ export function BookingDetailPopover({
         <div className="space-y-3 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Booked by</span>
-            <span className="font-medium">{booking.bookerName}</span>
+            <span className="font-medium">{getBookingDisplayName(booking)}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Date</span>
@@ -119,6 +109,9 @@ export function BookingDetailPopover({
           )}
           {booking.isRaceSpecific && (
             <Badge variant="secondary">Race-specific</Badge>
+          )}
+          {booking.squad && (
+            <Badge variant="outline">Squad booking</Badge>
           )}
           {booking.notes && (
             <div>

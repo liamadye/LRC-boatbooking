@@ -5,6 +5,10 @@ import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { getInvitationUrls } from "@/lib/invitations";
+import {
+  invitationInclude,
+  serializeInvitation,
+} from "@/lib/admin-invitations";
 
 export async function POST(
   _request: NextRequest,
@@ -17,7 +21,10 @@ export async function POST(
 
   const { id } = await params;
 
-  const invitation = await prisma.invitation.findUnique({ where: { id } });
+  const invitation = await prisma.invitation.findUnique({
+    where: { id },
+    include: invitationInclude,
+  });
   if (!invitation) {
     return NextResponse.json({ error: "Invitation not found" }, { status: 404 });
   }
@@ -36,7 +43,7 @@ export async function POST(
       invitedBy: admin.id,
       expiresAt: addDays(new Date(), 7),
     },
-    include: { inviter: { select: { fullName: true } } },
+    include: invitationInclude,
   });
 
   const urls = await getInvitationUrls(refreshed.email, refreshed.token);
@@ -57,7 +64,7 @@ export async function POST(
   });
 
   return NextResponse.json({
-    ...refreshed,
+    ...serializeInvitation(refreshed),
     emailSent,
     inviteUrl: urls.actionUrl,
     deliveryMode: urls.usedGeneratedLink ? "manual_action_link" : "manual_register_link",
@@ -74,7 +81,10 @@ export async function GET(
   }
 
   const { id } = await params;
-  const invitation = await prisma.invitation.findUnique({ where: { id } });
+  const invitation = await prisma.invitation.findUnique({
+    where: { id },
+    include: invitationInclude,
+  });
 
   if (!invitation) {
     return NextResponse.json({ error: "Invitation not found" }, { status: 404 });
@@ -105,7 +115,10 @@ export async function DELETE(
   }
 
   const { id } = await params;
-  const invitation = await prisma.invitation.findUnique({ where: { id } });
+  const invitation = await prisma.invitation.findUnique({
+    where: { id },
+    include: invitationInclude,
+  });
 
   if (!invitation) {
     return NextResponse.json({ error: "Invitation not found" }, { status: 404 });
@@ -129,6 +142,7 @@ export async function DELETE(
       email: invitation.email,
       role: invitation.role,
       memberType: invitation.memberType,
+      squadIds: invitation.invitationSquads.map((entry) => entry.squad.id),
       expiresAt: invitation.expiresAt.toISOString(),
     },
   });

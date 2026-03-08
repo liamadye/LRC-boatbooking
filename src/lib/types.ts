@@ -28,6 +28,11 @@ export type OarSetItem = {
   name: string;
 };
 
+export type SquadSummary = {
+  id: string;
+  name: string;
+};
+
 export type BookingSlot = {
   id: string;
   bookerName: string;
@@ -45,6 +50,51 @@ export type DayBookings = {
   oarSets: Record<string, BookingSlot[]>;     // oarSetId -> bookings
 };
 
+export type SerializedBooking = {
+  id: string;
+  date: string;
+  resourceType: string;
+  boatId: string | null;
+  equipmentId: string | null;
+  oarSetId: string | null;
+  userId: string;
+  squadId: string | null;
+  bookerName: string;
+  crewCount: number;
+  startSlot: number;
+  endSlot: number;
+  isRaceSpecific: boolean;
+  raceDetails?: string | null;
+  notes: string | null;
+  squad: SquadSummary | null;
+};
+
+export type BookingWeekSummary = {
+  weekStart: string;
+  opensAt: string;
+  closesAt: string | null;
+  pymbleNotes: string | null;
+};
+
+export type BookingWeekPayload = {
+  bookings: SerializedBooking[];
+  bookingWeek: BookingWeekSummary | null;
+  weekStart: string;
+};
+
+export type InvitationSummary = {
+  id: string;
+  email: string;
+  token: string;
+  role: string;
+  memberType: string;
+  acceptedAt: string | null;
+  expiresAt: string;
+  createdAt: string;
+  inviter: { fullName: string };
+  squads: SquadSummary[];
+};
+
 export type UserProfile = {
   id: string;
   email: string;
@@ -53,5 +103,5 @@ export type UserProfile = {
   memberType: "senior_competitive" | "student" | "recreational";
   weightKg: number | null;
   hasBlackBoatEligibility: boolean;
-  squads: { id: string; name: string }[];
+  squads: SquadSummary[];
 };

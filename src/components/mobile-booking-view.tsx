@@ -3,24 +3,15 @@
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { TIME_SLOTS, MAX_CREW } from "@/lib/constants";
+import { getBookingDisplayName } from "@/lib/booking-utils";
 import { Circle, Lock } from "lucide-react";
-import type { BoatWithRelations, EquipmentItem, OarSetItem, UserProfile } from "@/lib/types";
-
-type SerializedBooking = {
-  id: string;
-  date: string;
-  resourceType: string;
-  boatId: string | null;
-  equipmentId: string | null;
-  oarSetId: string | null;
-  userId: string;
-  bookerName: string;
-  crewCount: number;
-  startSlot: number;
-  endSlot: number;
-  isRaceSpecific: boolean;
-  notes: string | null;
-};
+import type {
+  BoatWithRelations,
+  EquipmentItem,
+  OarSetItem,
+  SerializedBooking,
+  UserProfile,
+} from "@/lib/types";
 
 type Props = {
   boats: BoatWithRelations[];
@@ -51,35 +42,55 @@ export function MobileBookingView({
     [boats]
   );
 
+  const slotBookings = useMemo(() => {
+    const slots: Record<number, SerializedBooking[]> = {};
+    for (const ts of TIME_SLOTS) {
+      slots[ts.slot] = [];
+    }
+
+    for (const booking of dayBookings) {
+      for (let slot = booking.startSlot; slot <= booking.endSlot; slot += 1) {
+        slots[slot].push(booking);
+      }
+    }
+
+    return slots;
+  }, [dayBookings]);
+
+  const availableBySlot = useMemo(() => {
+    const slots: Record<number, BoatWithRelations[]> = {};
+    for (const ts of TIME_SLOTS) {
+      const bookedResourceIds = new Set(
+        (slotBookings[ts.slot] ?? []).map(
+          (booking) => booking.boatId ?? booking.equipmentId ?? booking.oarSetId
+        )
+      );
+      slots[ts.slot] = availableBoats.filter((boat) => !bookedResourceIds.has(boat.id));
+    }
+    return slots;
+  }, [availableBoats, slotBookings]);
+
   return (
     <div className="space-y-3 md:hidden">
       {TIME_SLOTS.map((ts) => {
-        const slotBookings = dayBookings.filter(
-          (b) => b.startSlot <= ts.slot && b.endSlot >= ts.slot
-        );
-
-        const bookedResourceIds = new Set(
-          slotBookings.map((b) => b.boatId ?? b.equipmentId ?? b.oarSetId)
-        );
-        const availableForSlot = availableBoats.filter(
-          (b) => !bookedResourceIds.has(b.id)
-        );
+        const bookingsForSlot = slotBookings[ts.slot] ?? [];
+        const availableForSlot = availableBySlot[ts.slot] ?? [];
 
         return (
           <div key={ts.slot} className="rounded-lg border bg-white overflow-hidden">
             <div className="bg-gray-50 px-3 py-2 font-semibold text-sm border-b flex items-center justify-between">
               <span>{ts.label}</span>
-              {slotBookings.length > 0 && (
+              {bookingsForSlot.length > 0 && (
                 <span className="text-xs text-muted-foreground font-normal">
-                  {slotBookings.length} booked
+                  {bookingsForSlot.length} booked
                 </span>
               )}
             </div>
 
             {/* Booked items */}
-            {slotBookings.length > 0 && (
+            {bookingsForSlot.length > 0 && (
               <div className="divide-y">
-                {slotBookings.map((booking) => {
+                {bookingsForSlot.map((booking) => {
                   const boat = boatMap.get(booking.boatId ?? "");
                   const equip = equipMap.get(booking.equipmentId ?? "");
                   const oar = oarMap.get(booking.oarSetId ?? "");
@@ -114,7 +125,7 @@ export function MobileBookingView({
                         "text-xs px-2 py-0.5 rounded-full flex-shrink-0 ml-2",
                         isOwn ? "bg-blue-200 text-blue-800" : "bg-gray-200 text-gray-700"
                       )}>
-                        {booking.bookerName} ({booking.crewCount})
+                        {getBookingDisplayName(booking)} ({booking.crewCount})
                       </div>
                     </button>
                   );
@@ -155,7 +166,7 @@ export function MobileBookingView({
               </details>
             )}
 
-            {slotBookings.length === 0 && availableForSlot.length === 0 && (
+            {bookingsForSlot.length === 0 && availableForSlot.length === 0 && (
               <div className="px-3 py-4 text-center text-sm text-muted-foreground">
                 No boats available
               </div>

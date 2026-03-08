@@ -23,6 +23,11 @@ export async function POST(request: NextRequest) {
 
   const invitation = await prisma.invitation.findUnique({
     where: { token },
+    include: {
+      invitationSquads: {
+        select: { squadId: true },
+      },
+    },
   });
 
   if (!invitation) {
@@ -37,8 +42,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invitation expired" }, { status: 410 });
   }
 
-  // Create the user profile with the role/memberType from the invitation
-  await prisma.user.upsert({
+  // Create the user profile with the role/memberType from the invitation.
+  const user = await prisma.user.upsert({
     where: { email: invitation.email },
     create: {
       email: invitation.email,
@@ -52,6 +57,16 @@ export async function POST(request: NextRequest) {
       memberType: invitation.memberType,
     },
   });
+
+  if (invitation.invitationSquads.length > 0) {
+    await prisma.userSquad.createMany({
+      data: invitation.invitationSquads.map((entry) => ({
+        userId: user.id,
+        squadId: entry.squadId,
+      })),
+      skipDuplicates: true,
+    });
+  }
 
   // Mark invitation as accepted
   await prisma.invitation.update({

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { AdminTabs } from "@/components/admin/admin-tabs";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
+import { invitationInclude, serializeInvitation } from "@/lib/admin-invitations";
 
 export default async function AdminPage() {
   const user = await getAuthenticatedUser();
@@ -27,7 +28,7 @@ export default async function AdminPage() {
       orderBy: { createdAt: "desc" },
     }),
     prisma.invitation.findMany({
-      include: { inviter: { select: { fullName: true } } },
+      include: invitationInclude,
       orderBy: { createdAt: "desc" },
       take: 100,
     }),
@@ -58,7 +59,7 @@ export default async function AdminPage() {
             email: a.applicant.email,
           },
         }))}
-        invitations={JSON.parse(JSON.stringify(invitations))}
+        invitations={invitations.map(serializeInvitation)}
       />
     </div>
   );

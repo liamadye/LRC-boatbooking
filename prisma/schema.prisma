@@ -66,8 +66,10 @@ model Squad {
   name      String   @unique
   createdAt DateTime @default(now()) @map("created_at")
 
-  boats      Boat[]
-  userSquads UserSquad[]
+  boats            Boat[]
+  userSquads       UserSquad[]
+  bookings         Booking[]
+  invitationSquads InvitationSquad[]
 
   @@map("squads")
 }
@@ -181,6 +183,7 @@ model Booking {
   equipmentId    String?      @map("equipment_id")
   oarSetId       String?      @map("oar_set_id")
   userId         String       @map("user_id")
+  squadId        String?      @map("squad_id")
   bookerName     String       @map("booker_name")
   crewCount      Int          @default(1) @map("crew_count")
   startSlot      Int          @map("start_slot")
@@ -195,6 +198,7 @@ model Booking {
   boat      Boat?      @relation(fields: [boatId], references: [id])
   equipment Equipment? @relation(fields: [equipmentId], references: [id])
   oarSet    OarSet?    @relation(fields: [oarSetId], references: [id])
+  squad     Squad?     @relation(fields: [squadId], references: [id], onDelete: SetNull)
   user      User       @relation(fields: [userId], references: [id])
 
   @@unique([date, boatId, startSlot])
@@ -203,6 +207,7 @@ model Booking {
   @@index([date])
   @@index([userId])
   @@index([boatId, date])
+  @@index([squadId])
   @@map("bookings")
 }
 
@@ -232,10 +237,22 @@ model Invitation {
   expiresAt   DateTime        @map("expires_at")
   createdAt   DateTime        @default(now()) @map("created_at")
 
-  inviter User @relation("Inviter", fields: [invitedBy], references: [id])
+  inviter          User              @relation("Inviter", fields: [invitedBy], references: [id])
+  invitationSquads InvitationSquad[]
 
   @@index([email, acceptedAt])
   @@map("invitations")
+}
+
+model InvitationSquad {
+  invitationId String @map("invitation_id")
+  squadId      String @map("squad_id")
+
+  invitation Invitation @relation(fields: [invitationId], references: [id], onDelete: Cascade)
+  squad      Squad      @relation(fields: [squadId], references: [id], onDelete: Cascade)
+
+  @@id([invitationId, squadId])
+  @@map("invitation_squads")
 }
 
 // ─── Black Boat Applications ────────────────────────────────────

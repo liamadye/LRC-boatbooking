@@ -5,6 +5,11 @@ import { validateBooking } from "@/lib/validation";
 import { isWeekend } from "@/lib/validation";
 import { addDays, subDays, parseISO, startOfWeek, format } from "date-fns";
 import { createRateLimiter } from "@/lib/rate-limit";
+import {
+  buildBookingWeekPayload,
+  serializeBooking,
+  supportsSquadBooking,
+} from "@/lib/booking-utils";
 
 const bookingLimiter = createRateLimiter({ windowMs: 60_000, maxRequests: 20 });
 
@@ -22,21 +27,38 @@ export async function GET(request: NextRequest) {
   const date = searchParams.get("date");
   const weekStart = searchParams.get("weekStart");
 
-  const where: Record<string, unknown> = {};
+  if (weekStart) {
+    const start = parseISO(weekStart);
+    const [bookings, bookingWeek] = await Promise.all([
+      prisma.booking.findMany({
+        where: { date: { gte: start, lte: addDays(start, 6) } },
+        include: { squad: { select: { id: true, name: true } } },
+        orderBy: [{ date: "asc" }, { startSlot: "asc" }],
+      }),
+      prisma.bookingWeek.findUnique({ where: { weekStart: start } }),
+    ]);
 
+    return NextResponse.json(
+      buildBookingWeekPayload({
+        bookings,
+        bookingWeek,
+        weekStart: start,
+      })
+    );
+  }
+
+  const where: Record<string, unknown> = {};
   if (date) {
     where.date = parseISO(date);
-  } else if (weekStart) {
-    const start = parseISO(weekStart);
-    where.date = { gte: start, lte: addDays(start, 6) };
   }
 
   const bookings = await prisma.booking.findMany({
     where,
+    include: { squad: { select: { id: true, name: true } } },
     orderBy: { startSlot: "asc" },
   });
 
-  return NextResponse.json(bookings);
+  return NextResponse.json(bookings.map(serializeBooking));
 }
 
 export async function POST(request: NextRequest) {
@@ -63,6 +85,7 @@ export async function POST(request: NextRequest) {
     date,
     resourceType,
     resourceId,
+    squadId,
     bookerName,
     crewCount,
     startSlot,
@@ -75,6 +98,7 @@ export async function POST(request: NextRequest) {
   // Fetch user profile
   const user = await prisma.user.findUnique({
     where: { email: authUser.email! },
+    include: { squads: { include: { squad: true } } },
   });
 
   if (!user) {
@@ -128,6 +152,31 @@ export async function POST(request: NextRequest) {
     });
     if (!oarSet) {
       return NextResponse.json({ error: "Oar set not found" }, { status: 404 });
+    }
+  }
+
+  let bookingSquad = null;
+  if (squadId) {
+    if (resourceType !== "boat" || !boat) {
+      return NextResponse.json(
+        { error: "Squad bookings are only available for boats." },
+        { status: 400 }
+      );
+    }
+
+    if (!supportsSquadBooking(boat.boatType)) {
+      return NextResponse.json(
+        { error: "Squad bookings are only available for 4s and 8s." },
+        { status: 400 }
+      );
+    }
+
+    bookingSquad = user.squads.find((entry) => entry.squad.id === squadId)?.squad ?? null;
+    if (!bookingSquad) {
+      return NextResponse.json(
+        { error: "You can only book on behalf of a squad you belong to." },
+        { status: 403 }
+      );
     }
   }
 
@@ -208,7 +257,8 @@ export async function POST(request: NextRequest) {
       equipmentId: resourceType === "equipment" ? resourceId : null,
       oarSetId: resourceType === "oar_set" ? resourceId : null,
       userId: user.id,
-      bookerName,
+      squadId: bookingSquad?.id ?? null,
+      bookerName: bookingSquad?.name ?? bookerName,
       crewCount,
       startSlot,
       endSlot,
@@ -216,7 +266,8 @@ export async function POST(request: NextRequest) {
       raceDetails,
       notes,
     },
+    include: { squad: { select: { id: true, name: true } } },
   });
 
-  return NextResponse.json(booking, { status: 201 });
+  return NextResponse.json(serializeBooking(booking), { status: 201 });
 }

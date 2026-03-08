@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
+import { serializeBooking } from "@/lib/booking-utils";
 
 export async function GET() {
   const supabase = await createClient();
@@ -27,14 +28,15 @@ export async function GET() {
     },
     include: {
       boat: { select: { name: true, boatType: true } },
+      squad: { select: { id: true, name: true } },
     },
     orderBy: [{ date: "asc" }, { startSlot: "asc" }],
   });
 
   return NextResponse.json(
     bookings.map((b) => ({
-      ...b,
-      date: b.date.toISOString().split("T")[0],
+      ...serializeBooking(b),
+      boat: b.boat,
     }))
   );
 }

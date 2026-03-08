@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BoatManagement } from "./boat-management";
-import type { BoatWithRelations } from "@/lib/types";
+import type { BoatWithRelations, InvitationSummary, SquadSummary } from "@/lib/types";
 
 const MemberManagement = dynamic(() => import("./member-management").then(m => ({ default: m.MemberManagement })));
 const BookingManagement = dynamic(() => import("./booking-management").then(m => ({ default: m.BookingManagement })));
@@ -34,23 +34,6 @@ type Application = {
   applicant: { id: string; fullName: string; email: string };
 };
 
-type Squad = {
-  id: string;
-  name: string;
-};
-
-type Invitation = {
-  id: string;
-  email: string;
-  token: string;
-  role: string;
-  memberType: string;
-  acceptedAt: string | null;
-  expiresAt: string;
-  createdAt: string;
-  inviter: { fullName: string };
-};
-
 export function AdminTabs({
   boats,
   squads,
@@ -59,10 +42,10 @@ export function AdminTabs({
   invitations,
 }: {
   boats: BoatWithRelations[];
-  squads: Squad[];
+  squads: SquadSummary[];
   users: AdminUser[];
   applications: Application[];
-  invitations: Invitation[];
+  invitations: InvitationSummary[];
 }) {
   return (
     <Tabs defaultValue="boats">
@@ -108,7 +91,7 @@ export function AdminTabs({
       </TabsContent>
 
       <TabsContent value="invitations">
-        <InviteManagement invitations={invitations} />
+        <InviteManagement invitations={invitations} squads={squads} />
       </TabsContent>
 
       {applications.length > 0 && (

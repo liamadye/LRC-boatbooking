@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   Dialog,
   DialogContent,
@@ -14,8 +13,9 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { TIME_SLOTS, MAX_CREW } from "@/lib/constants";
+import { supportsSquadBooking } from "@/lib/booking-utils";
 import { useToast } from "@/hooks/use-toast";
-import type { BoatWithRelations, UserProfile } from "@/lib/types";
+import type { BoatWithRelations, SerializedBooking, UserProfile } from "@/lib/types";
 
 type BookingTarget = {
   resourceType: "boat" | "equipment" | "oar_set";
@@ -24,37 +24,23 @@ type BookingTarget = {
   slot: number;
 };
 
-type EditingBooking = {
-  id: string;
-  bookerName: string;
-  crewCount: number;
-  startSlot: number;
-  endSlot: number;
-  isRaceSpecific: boolean;
-  raceDetails?: string | null;
-  notes?: string | null;
-};
-
-function supportsSquadBooking(boatType: string) {
-  return boatType.includes("4") || boatType.includes("8");
-}
-
 export function BookingModal({
   target,
   selectedDate,
   user,
   boats,
   editingBooking,
+  onSaved,
   onClose,
 }: {
   target: BookingTarget;
   selectedDate: string;
   user: UserProfile;
   boats: BoatWithRelations[];
-  editingBooking?: EditingBooking;
+  editingBooking?: SerializedBooking;
+  onSaved?: (booking: SerializedBooking) => void;
   onClose: () => void;
 }) {
-  const router = useRouter();
   const { toast } = useToast();
 
   const isEditing = !!editingBooking;
@@ -66,7 +52,7 @@ export function BookingModal({
     user.squads.length > 0 &&
     supportsSquadBooking(boat.boatType);
   const matchingSquad = canBookAsSquad
-    ? user.squads.find((s) => s.name === editingBooking?.bookerName)
+    ? user.squads.find((s) => s.id === editingBooking?.squadId)
     : null;
 
   const [bookerName, setBookerName] = useState(editingBooking?.bookerName ?? user.fullName);
@@ -115,6 +101,7 @@ export function BookingModal({
     setLoading(true);
     setErrors([]);
     let submitBookerName = bookerName;
+    let submitSquadId: string | null = null;
 
     if (canBookAsSquad && bookingMode === "squad") {
       const selected = user.squads.find((s) => s.id === selectedSquadId);
@@ -124,6 +111,7 @@ export function BookingModal({
         return;
       }
       submitBookerName = selected.name;
+      submitSquadId = selected.id;
     }
 
     try {
@@ -135,6 +123,7 @@ export function BookingModal({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             bookerName: submitBookerName,
+            squadId: submitSquadId,
             endSlot,
             isRaceSpecific,
             raceDetails: isRaceSpecific ? raceDetails : null,
@@ -150,6 +139,7 @@ export function BookingModal({
             resourceType: target.resourceType,
             resourceId: target.resourceId,
             bookerName: submitBookerName,
+            squadId: submitSquadId,
             crewCount: maxCrew,
             startSlot: target.slot,
             endSlot,
@@ -175,8 +165,8 @@ export function BookingModal({
         title: isEditing ? "Booking updated" : "Booking created",
         description: `${target.resourceName} ${isEditing ? "updated" : "booked"} successfully.`,
       });
+      onSaved?.(data as SerializedBooking);
       onClose();
-      router.refresh();
     } catch {
       setErrors(["Network error. Please try again."]);
     } finally {
