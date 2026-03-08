@@ -18,6 +18,7 @@ type BookingInput = {
   startSlot: number;
   endSlot: number;
   userId: string;
+  userRole: "admin" | "captain" | "vice_captain" | "squad_captain" | "member";
   userMemberType: "senior_competitive" | "student" | "recreational";
   userHasBlackBoatEligibility: boolean;
   isWeekend: boolean;
@@ -32,6 +33,11 @@ type BookingInput = {
  */
 export function validateBooking(input: BookingInput): ValidationError[] {
   const errors: ValidationError[] = [];
+  const isPrivilegedRole =
+    input.userRole === "admin" ||
+    input.userRole === "captain" ||
+    input.userRole === "vice_captain";
+  const enforceMemberTypeRules = false;
 
   // 1. Boat status check — "Not In Use" boats cannot be booked
   if (input.boatStatus === "not_in_use") {
@@ -42,8 +48,12 @@ export function validateBooking(input: BookingInput): ValidationError[] {
     return errors; // No point checking further
   }
 
-  // 2. Classification check — Black boats require eligibility
-  if (input.boatClassification === "black" && !input.userHasBlackBoatEligibility) {
+  // 2. Classification check — Black boats require eligibility unless user has elevated role
+  if (
+    input.boatClassification === "black" &&
+    !input.userHasBlackBoatEligibility &&
+    !isPrivilegedRole
+  ) {
     errors.push({
       field: "boat",
       message:
@@ -51,18 +61,7 @@ export function validateBooking(input: BookingInput): ValidationError[] {
     });
   }
 
-  // 3. Recreational members can only use Green boats
-  if (
-    input.userMemberType === "recreational" &&
-    input.boatClassification === "black"
-  ) {
-    errors.push({
-      field: "boat",
-      message: "Recreational members can only book Green (training) boats.",
-    });
-  }
-
-  // 4. Private boat check — must be owner
+  // 3. Private boat check — must be owner
   if (input.boatCategory === "private" && input.boatOwnerUserId !== input.userId) {
     errors.push({
       field: "boat",
@@ -71,7 +70,7 @@ export function validateBooking(input: BookingInput): ValidationError[] {
     });
   }
 
-  // 5. Crew count check
+  // 4. Crew count check
   if (input.boatType) {
     const maxCrew = MAX_CREW[input.boatType];
     if (maxCrew && input.crewCount > maxCrew) {
@@ -88,11 +87,11 @@ export function validateBooking(input: BookingInput): ValidationError[] {
     }
   }
 
-  // 6. Weight check — disabled per club feedback
+  // 5. Weight check — disabled per club feedback
   // Weight validation is informational only; not enforced at booking time.
 
-  // 7. Member type time restrictions
-  if (input.userMemberType && input.startSlot) {
+  // 6. Member type time restrictions (temporarily disabled)
+  if (enforceMemberTypeRules && input.userMemberType && input.startSlot) {
     const restrictions =
       MEMBER_TIME_RESTRICTIONS[input.userMemberType];
     const timeRule = input.isWeekend
@@ -107,7 +106,7 @@ export function validateBooking(input: BookingInput): ValidationError[] {
     }
   }
 
-  // 8. Slot range validation
+  // 7. Slot range validation
   if (input.startSlot > input.endSlot) {
     errors.push({
       field: "timeSlot",
@@ -122,7 +121,7 @@ export function validateBooking(input: BookingInput): ValidationError[] {
     });
   }
 
-  // 9. Erg single-slot restriction
+  // 8. Erg single-slot restriction
   if (input.equipmentType === "erg" && input.startSlot !== input.endSlot) {
     errors.push({
       field: "timeSlot",
@@ -130,7 +129,7 @@ export function validateBooking(input: BookingInput): ValidationError[] {
     });
   }
 
-  // 10. Consecutive day warning (soft validation — returns warning, not blocking unless !raceSpecific)
+  // 9. Consecutive day warning (soft validation — returns warning, not blocking unless !raceSpecific)
   if (
     input.existingBookingsOnConsecutiveDays &&
     input.existingBookingsOnConsecutiveDays > 0 &&

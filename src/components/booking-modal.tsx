@@ -35,6 +35,10 @@ type EditingBooking = {
   notes?: string | null;
 };
 
+function supportsSquadBooking(boatType: string) {
+  return boatType.includes("4") || boatType.includes("8");
+}
+
 export function BookingModal({
   target,
   selectedDate,
@@ -56,8 +60,22 @@ export function BookingModal({
   const isEditing = !!editingBooking;
   const boat = boats.find((b) => b.id === target.resourceId);
   const maxCrew = boat ? (MAX_CREW[boat.boatType] ?? 1) : 1;
+  const canBookAsSquad =
+    target.resourceType === "boat" &&
+    !!boat &&
+    user.squads.length > 0 &&
+    supportsSquadBooking(boat.boatType);
+  const matchingSquad = canBookAsSquad
+    ? user.squads.find((s) => s.name === editingBooking?.bookerName)
+    : null;
 
   const [bookerName, setBookerName] = useState(editingBooking?.bookerName ?? user.fullName);
+  const [bookingMode, setBookingMode] = useState<"person" | "squad">(
+    matchingSquad ? "squad" : "person"
+  );
+  const [selectedSquadId, setSelectedSquadId] = useState<string>(
+    matchingSquad?.id ?? user.squads[0]?.id ?? ""
+  );
   const [endSlot, setEndSlot] = useState(editingBooking?.endSlot ?? target.slot);
   const [isRaceSpecific, setIsRaceSpecific] = useState(editingBooking?.isRaceSpecific ?? false);
   const [raceDetails, setRaceDetails] = useState(editingBooking?.raceDetails ?? "");
@@ -65,10 +83,48 @@ export function BookingModal({
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
 
+  function handleBookingModeChange(nextMode: "person" | "squad") {
+    setBookingMode(nextMode);
+
+    if (nextMode === "person") {
+      setBookerName(user.fullName);
+      return;
+    }
+
+    const fallback = user.squads[0];
+    const selected = user.squads.find((s) => s.id === selectedSquadId) ?? fallback;
+    if (selected) {
+      setSelectedSquadId(selected.id);
+      setBookerName(selected.name);
+    }
+  }
+
+  function handleSquadChange(squadId: string) {
+    setSelectedSquadId(squadId);
+
+    if (bookingMode === "squad") {
+      const selected = user.squads.find((s) => s.id === squadId);
+      if (selected) {
+        setBookerName(selected.name);
+      }
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setErrors([]);
+    let submitBookerName = bookerName;
+
+    if (canBookAsSquad && bookingMode === "squad") {
+      const selected = user.squads.find((s) => s.id === selectedSquadId);
+      if (!selected) {
+        setErrors(["Please select a squad to continue."]);
+        setLoading(false);
+        return;
+      }
+      submitBookerName = selected.name;
+    }
 
     try {
       let res: Response;
@@ -78,7 +134,7 @@ export function BookingModal({
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            bookerName,
+            bookerName: submitBookerName,
             endSlot,
             isRaceSpecific,
             raceDetails: isRaceSpecific ? raceDetails : null,
@@ -93,7 +149,7 @@ export function BookingModal({
             date: selectedDate,
             resourceType: target.resourceType,
             resourceId: target.resourceId,
-            bookerName,
+            bookerName: submitBookerName,
             crewCount: maxCrew,
             startSlot: target.slot,
             endSlot,
@@ -160,8 +216,40 @@ export function BookingModal({
               value={bookerName}
               onChange={(e) => setBookerName(e.target.value)}
               required
+              disabled={canBookAsSquad && bookingMode === "squad"}
             />
           </div>
+
+          {canBookAsSquad && (
+            <div className="space-y-2">
+              <Label htmlFor="bookingMode">Booking For</Label>
+              <select
+                id="bookingMode"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={bookingMode}
+                onChange={(e) =>
+                  handleBookingModeChange(e.target.value as "person" | "squad")
+                }
+              >
+                <option value="person">Person ({user.fullName})</option>
+                <option value="squad">Squad</option>
+              </select>
+
+              {bookingMode === "squad" && (
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={selectedSquadId}
+                  onChange={(e) => handleSquadChange(e.target.value)}
+                >
+                  {user.squads.map((squad) => (
+                    <option key={squad.id} value={squad.id}>
+                      {squad.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
 
           {target.resourceType === "boat" && boat && (
             <div className="text-sm text-muted-foreground">

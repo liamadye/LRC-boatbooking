@@ -160,6 +160,7 @@ export async function POST(request: NextRequest) {
     startSlot,
     endSlot,
     userId: user.id,
+    userRole: user.role,
     userMemberType: user.memberType as "senior_competitive" | "student" | "recreational",
     userHasBlackBoatEligibility: user.hasBlackBoatEligibility,
     isWeekend: isWeekend(bookingDate),

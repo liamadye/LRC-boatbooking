@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
+import { Trash2 } from "lucide-react";
 
 type AdminUser = {
   id: string;
@@ -38,6 +39,36 @@ export function MemberManagement({
     if (res.ok) {
       toast({ title: "Member updated" });
       router.refresh();
+    } else {
+      const body = await res.json();
+      toast({
+        title: body.error ?? "Failed to update member",
+        variant: "destructive",
+      });
+    }
+  }
+
+  async function deleteUser(userId: string, fullName: string) {
+    const confirmed = window.confirm(
+      `Delete user "${fullName}"? This also removes their bookings, invitations, and squad memberships.`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const res = await fetch(`/api/admin/users/${userId}`, {
+      method: "DELETE",
+    });
+    const body = await res.json();
+
+    if (res.ok) {
+      toast({ title: "Member deleted" });
+      router.refresh();
+    } else {
+      toast({
+        title: body.error ?? "Failed to delete member",
+        variant: "destructive",
+      });
     }
   }
 
@@ -107,6 +138,14 @@ export function MemberManagement({
                 {user.hasBlackBoatEligibility
                   ? "Revoke Black"
                   : "Grant Black"}
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => deleteUser(user.id, user.fullName)}
+              >
+                <Trash2 className="h-3 w-3 mr-1" />
+                Delete
               </Button>
             </div>
           </CardContent>

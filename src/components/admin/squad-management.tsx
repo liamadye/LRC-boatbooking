@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, X, Pencil, Check } from "lucide-react";
+import { Plus, X, Pencil, Check, Trash2 } from "lucide-react";
 
 type SquadMember = {
   id: string;
@@ -117,6 +117,31 @@ export function SquadManagement({ users }: { users: AdminUser[] }) {
     }
   }
 
+  async function deleteSquad(squadId: string, squadName: string) {
+    const confirmed = window.confirm(
+      `Delete squad "${squadName}"? This removes squad membership assignments.`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const res = await fetch(`/api/admin/squads/${squadId}`, {
+      method: "DELETE",
+    });
+
+    if (res.ok) {
+      setSquads((prev) => prev.filter((s) => s.id !== squadId));
+      toast({ title: "Squad deleted" });
+      router.refresh();
+    } else {
+      const data = await res.json();
+      toast({
+        title: data.error ?? "Failed to delete squad",
+        variant: "destructive",
+      });
+    }
+  }
+
   if (loading) {
     return <div className="mt-4 text-muted-foreground">Loading squads...</div>;
   }
@@ -178,6 +203,14 @@ export function SquadManagement({ users }: { users: AdminUser[] }) {
                     }}
                   >
                     <Pencil className="h-3 w-3" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-red-600 hover:text-red-700"
+                    onClick={() => deleteSquad(squad.id, squad.name)}
+                  >
+                    <Trash2 className="h-3 w-3" />
                   </Button>
                 </div>
               )}

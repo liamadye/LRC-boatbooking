@@ -131,6 +131,7 @@ export async function PATCH(
         startSlot: booking.startSlot,
         endSlot: newEndSlot,
         userId: user.id,
+        userRole: user.role,
         userMemberType: user.memberType as "senior_competitive" | "student" | "recreational",
         userHasBlackBoatEligibility: user.hasBlackBoatEligibility,
         isWeekend: isWeekend(booking.date),

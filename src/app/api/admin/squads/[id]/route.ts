@@ -60,3 +60,30 @@ export async function PATCH(
     members: updated!.userSquads.map((us) => us.user),
   });
 }
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const admin = await requirePermission("manage_users");
+  if (!admin) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { id } = await params;
+  const squad = await prisma.squad.findUnique({ where: { id } });
+  if (!squad) {
+    return NextResponse.json({ error: "Squad not found" }, { status: 404 });
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.boat.updateMany({
+      where: { responsibleSquadId: id },
+      data: { responsibleSquadId: null },
+    });
+    await tx.userSquad.deleteMany({ where: { squadId: id } });
+    await tx.squad.delete({ where: { id } });
+  });
+
+  return NextResponse.json({ success: true });
+}

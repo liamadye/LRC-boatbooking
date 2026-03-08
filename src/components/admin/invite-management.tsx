@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Copy } from "lucide-react";
+import { Copy, RefreshCw, Trash2 } from "lucide-react";
 
 type Invitation = {
   id: string;
@@ -29,10 +29,16 @@ export function InviteManagement({
 }) {
   const router = useRouter();
   const { toast } = useToast();
+  const [inviteRows, setInviteRows] = useState<Invitation[]>(invitations);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("member");
   const [memberType, setMemberType] = useState("recreational");
   const [loading, setLoading] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setInviteRows(invitations);
+  }, [invitations]);
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
@@ -70,9 +76,71 @@ export function InviteManagement({
     toast({ title: "Link copied to clipboard" });
   }
 
-  const pending = invitations.filter((i) => !i.acceptedAt && new Date(i.expiresAt) > new Date());
-  const accepted = invitations.filter((i) => i.acceptedAt);
-  const expired = invitations.filter((i) => !i.acceptedAt && new Date(i.expiresAt) <= new Date());
+  async function resendInvitation(invitation: Invitation) {
+    setActionLoadingId(`resend:${invitation.id}`);
+    const res = await fetch(`/api/admin/invitations/${invitation.id}`, {
+      method: "POST",
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      toast({
+        title: "Failed to resend invitation",
+        description: data.error ?? "Unknown error",
+        variant: "destructive",
+      });
+      setActionLoadingId(null);
+      return;
+    }
+
+    const inviteUrl = `${window.location.origin}/register?token=${data.token}`;
+    await navigator.clipboard.writeText(inviteUrl);
+    setInviteRows((prev) =>
+      prev.map((inv) => (inv.id === invitation.id ? (data as Invitation) : inv))
+    );
+    toast({
+      title: "Invitation resent",
+      description: data.emailSent
+        ? "Invitation email sent and new invite link copied."
+        : "Invite renewed and new link copied. Share it manually.",
+    });
+    setActionLoadingId(null);
+    router.refresh();
+  }
+
+  async function deleteInvitation(invitation: Invitation) {
+    const confirmed = window.confirm(
+      `Delete invitation for ${invitation.email}? This cannot be undone.`
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setActionLoadingId(`delete:${invitation.id}`);
+    const res = await fetch(`/api/admin/invitations/${invitation.id}`, {
+      method: "DELETE",
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      toast({
+        title: "Failed to delete invitation",
+        description: data.error ?? "Unknown error",
+        variant: "destructive",
+      });
+      setActionLoadingId(null);
+      return;
+    }
+
+    setInviteRows((prev) => prev.filter((inv) => inv.id !== invitation.id));
+    toast({ title: "Invitation deleted" });
+    setActionLoadingId(null);
+    router.refresh();
+  }
+
+  const pending = inviteRows.filter((i) => !i.acceptedAt && new Date(i.expiresAt) > new Date());
+  const accepted = inviteRows.filter((i) => i.acceptedAt);
+  const expired = inviteRows.filter((i) => !i.acceptedAt && new Date(i.expiresAt) <= new Date());
 
   return (
     <div className="space-y-6 mt-4">
@@ -142,14 +210,35 @@ export function InviteManagement({
                       {" "}— Expires {new Date(inv.expiresAt).toLocaleDateString()}
                     </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => copyLink(inv.token)}
-                  >
-                    <Copy className="h-4 w-4 mr-1" />
-                    Copy Link
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => copyLink(inv.token)}
+                    >
+                      <Copy className="h-4 w-4 mr-1" />
+                      Copy Link
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={actionLoadingId === `resend:${inv.id}`}
+                      onClick={() => resendInvitation(inv)}
+                    >
+                      <RefreshCw className="h-4 w-4 mr-1" />
+                      Resend
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-600 hover:text-red-700"
+                      disabled={actionLoadingId === `delete:${inv.id}`}
+                      onClick={() => deleteInvitation(inv)}
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Delete
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             ))}
@@ -190,7 +279,28 @@ export function InviteManagement({
               <Card key={inv.id}>
                 <CardContent className="flex items-center justify-between py-3">
                   <div className="font-medium text-muted-foreground">{inv.email}</div>
-                  <Badge variant="secondary">Expired</Badge>
+                  <div className="flex items-center gap-1">
+                    <Badge variant="secondary">Expired</Badge>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={actionLoadingId === `resend:${inv.id}`}
+                      onClick={() => resendInvitation(inv)}
+                    >
+                      <RefreshCw className="h-4 w-4 mr-1" />
+                      Resend
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-600 hover:text-red-700"
+                      disabled={actionLoadingId === `delete:${inv.id}`}
+                      onClick={() => deleteInvitation(inv)}
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Delete
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             ))}

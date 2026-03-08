@@ -73,20 +73,20 @@ export function AdminTabs({
         <TabsTrigger value="members">
           Members ({users.length})
         </TabsTrigger>
-        <TabsTrigger value="bookings">
-          All Bookings
-        </TabsTrigger>
         <TabsTrigger value="invitations">
           Invitations
         </TabsTrigger>
-        <TabsTrigger value="applications">
-          Applications
-          {applications.length > 0 && (
+        <TabsTrigger value="bookings">
+          All Bookings
+        </TabsTrigger>
+        {applications.length > 0 && (
+          <TabsTrigger value="applications">
+            Applications
             <span className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
               {applications.length}
             </span>
-          )}
-        </TabsTrigger>
+          </TabsTrigger>
+        )}
         <TabsTrigger value="squads">
           Squads
         </TabsTrigger>
@@ -111,9 +111,11 @@ export function AdminTabs({
         <InviteManagement invitations={invitations} />
       </TabsContent>
 
-      <TabsContent value="applications">
-        <ApplicationReview applications={applications} />
-      </TabsContent>
+      {applications.length > 0 && (
+        <TabsContent value="applications">
+          <ApplicationReview applications={applications} />
+        </TabsContent>
+      )}
 
       <TabsContent value="squads">
         <SquadManagement users={users} />
