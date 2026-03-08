@@ -14,16 +14,26 @@ export default defineConfig({
   },
   projects: [
     {
+      name: "setup",
+      testMatch: /.*auth\.setup\.ts/,
+    },
+    {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
+      dependencies: ["setup"],
+      testIgnore: /.*auth\.setup\.ts/,
     },
     {
       name: "mobile-chrome",
       use: { ...devices["Pixel 5"] },
+      dependencies: ["setup"],
+      testIgnore: /.*auth\.setup\.ts/,
     },
     {
       name: "iphone-safari",
       use: { ...devices["iPhone 13"] },
+      dependencies: ["setup"],
+      testIgnore: /.*auth\.setup\.ts/,
     },
   ],
   webServer: process.env.E2E_BASE_URL

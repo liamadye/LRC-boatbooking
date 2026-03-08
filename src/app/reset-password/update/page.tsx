@@ -6,12 +6,26 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PasswordRequirements } from "@/components/password-requirements";
-import { PASSWORD_MIN_LENGTH, validatePassword } from "@/lib/passwords";
-import { useEffect, useMemo, useState } from "react";
+import { validatePassword } from "@/lib/passwords";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { clearAuthRedirectState, getHashAuthParams, hydrateSessionFromHash } from "@/lib/supabase/browser-auth";
 
 export default function UpdatePasswordPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+          <p className="text-muted-foreground">Preparing reset session...</p>
+        </div>
+      }
+    >
+      <UpdatePasswordForm />
+    </Suspense>
+  );
+}
+
+function UpdatePasswordForm() {
   const searchParams = useSearchParams();
   const authCode = searchParams.get("code");
   const [password, setPassword] = useState("");
@@ -20,6 +34,8 @@ export default function UpdatePasswordPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const confirmPasswordRef = useRef<HTMLInputElement>(null);
 
   const supabase = useMemo(() => createClient(), []);
 
@@ -65,11 +81,13 @@ export default function UpdatePasswordPage() {
     });
   }, [authCode, supabase]);
 
-  async function handleUpdate(e: React.FormEvent) {
+  async function handleUpdate(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
 
-    const passwordError = validatePassword(password, confirmPassword);
+    const submittedPassword = passwordRef.current?.value ?? password;
+    const submittedConfirmPassword = confirmPasswordRef.current?.value ?? confirmPassword;
+    const passwordError = validatePassword(submittedPassword, submittedConfirmPassword);
     if (passwordError) {
       setError(passwordError);
       return;
@@ -77,7 +95,7 @@ export default function UpdatePasswordPage() {
 
     setLoading(true);
 
-    const { error } = await supabase.auth.updateUser({ password });
+    const { error } = await supabase.auth.updateUser({ password: submittedPassword });
 
     if (error) {
       setError(error.message);
@@ -119,24 +137,24 @@ export default function UpdatePasswordPage() {
                 <Label htmlFor="password">New Password</Label>
                 <Input
                   id="password"
+                  name="password"
+                  ref={passwordRef}
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  required
-                  minLength={PASSWORD_MIN_LENGTH}
                 />
               </div>
               <div>
                 <Label htmlFor="confirmPassword">Confirm Password</Label>
                 <Input
                   id="confirmPassword"
+                  name="confirmPassword"
+                  ref={confirmPasswordRef}
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="••••••••"
-                  required
-                  minLength={PASSWORD_MIN_LENGTH}
                 />
               </div>
               <PasswordRequirements password={password} />

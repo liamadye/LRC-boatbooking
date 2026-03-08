@@ -35,6 +35,7 @@ export function WeekNav({
         variant="ghost"
         size="icon"
         className="h-8 w-8 flex-shrink-0"
+        aria-label="Previous week"
         disabled={loading}
         onClick={() => navigateTo(addDays(weekDays[0], -7))}
       >
@@ -67,6 +68,7 @@ export function WeekNav({
         variant="ghost"
         size="icon"
         className="h-8 w-8 flex-shrink-0"
+        aria-label="Next week"
         disabled={loading}
         onClick={() => navigateTo(addDays(weekDays[0], 7))}
       >

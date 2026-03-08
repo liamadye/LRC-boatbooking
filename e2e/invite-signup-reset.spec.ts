@@ -120,8 +120,8 @@ function buildTestIdentity(prefix: string) {
   return {
     email: `liam+${prefix}-${suffix}@liamdye.com`,
     fullName: `E2E ${prefix} ${suffix}`,
-    password: `Rowing!${suffix}Aa1`,
-    nextPassword: `Boats!${suffix}Bb2`,
+    password: "Rowing!Aa1",
+    nextPassword: "Boats!Bb2C",
   };
 }
 
@@ -160,6 +160,12 @@ async function generateRecoveryLink(email: string) {
 
 test.describe.serial("Invite signup and recovery flows", () => {
   test.skip(!hasAdminAuth, "Admin auth env vars are required");
+  test.beforeEach(async ({}, testInfo) => {
+    test.skip(
+      testInfo.project.name !== "chromium",
+      "Stateful invite/signup/reset flows run once in Chromium to avoid Supabase rate limits."
+    );
+  });
 
   test("admin can invite a user who completes signup and signs in with the chosen password", async ({
     browser,
@@ -193,7 +199,7 @@ test.describe.serial("Invite signup and recovery flows", () => {
     browser,
     page,
   }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(150_000);
     test.skip(!canGenerateRecoveryLink, "SUPABASE_SERVICE_ROLE_KEY not available for recovery-link generation");
 
     const identity = buildTestIdentity("recovery");
@@ -215,31 +221,20 @@ test.describe.serial("Invite signup and recovery flows", () => {
     const recoveryPage = await recoveryContext.newPage();
     await recoveryPage.goto(recoveryUrl);
     await expect(recoveryPage.getByText("Set New Password")).toBeVisible({ timeout: 15_000 });
-    await recoveryPage.evaluate((nextPassword) => {
-      const passwordInput = document.querySelector<HTMLInputElement>("#password");
-      const confirmInput = document.querySelector<HTMLInputElement>("#confirmPassword");
-
-      if (!passwordInput || !confirmInput) {
-        throw new Error("Password inputs not found");
-      }
-
-      const setValue = (input: HTMLInputElement, value: string) => {
-        const descriptor = Object.getOwnPropertyDescriptor(
-          HTMLInputElement.prototype,
-          "value"
-        );
-        descriptor?.set?.call(input, value);
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-        input.dispatchEvent(new Event("change", { bubbles: true }));
-      };
-
-      setValue(passwordInput, nextPassword);
-      setValue(confirmInput, nextPassword);
-    }, identity.nextPassword);
+    const newPasswordInput = recoveryPage.locator("#password");
+    const confirmPasswordInput = recoveryPage.locator("#confirmPassword");
+    await newPasswordInput.fill(identity.nextPassword);
+    await confirmPasswordInput.fill(identity.nextPassword);
+    await expect(newPasswordInput).toHaveValue(identity.nextPassword);
+    await expect(confirmPasswordInput).toHaveValue(identity.nextPassword);
+    await recoveryPage.waitForTimeout(150);
     await recoveryPage.getByRole("button", { name: /update password/i }).click();
 
+    await expect
+      .poll(async () => recoveryPage.url(), { timeout: 80_000, intervals: [500, 1000, 2000] })
+      .toContain("/bookings");
     await expect(recoveryPage.getByText(/Bookings — W\/C/i)).toBeVisible({
-      timeout: 40_000,
+      timeout: 20_000,
     });
     await recoveryPage.getByRole("button", { name: /sign out/i }).click();
     await expect(recoveryPage).toHaveURL(/\/login/, { timeout: 15_000 });

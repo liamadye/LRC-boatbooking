@@ -31,8 +31,8 @@ test.describe("Production-safe smoke checks", () => {
 
   test("password update page enforces matching passwords client-side", async ({ page }) => {
     await page.goto("/reset-password/update");
-    await page.getByLabel("New Password").fill("password123");
-    await page.getByLabel("Confirm Password").fill("different456");
+    await page.getByLabel("New Password").fill("Rowing!Aa1");
+    await page.getByLabel("Confirm Password").fill("Boats!Bb2C");
     await page.getByRole("button", { name: /update password/i }).click();
     await expect(page.getByText(/passwords do not match/i)).toBeVisible();
   });

@@ -1,4 +1,45 @@
+import "dotenv/config";
 import { test, expect } from "@playwright/test";
+import { createClient } from "@supabase/supabase-js";
+
+const appBaseUrl = process.env.E2E_BASE_URL ?? "http://localhost:3000";
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
+const recoveryEmail = process.env.E2E_USER_EMAIL ?? process.env.E2E_ADMIN_EMAIL ?? "";
+const canGenerateRecoveryLink = !!(supabaseUrl && serviceRoleKey && recoveryEmail);
+
+async function generateRecoveryLink(email: string) {
+  const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  const { data, error } = await adminClient.auth.admin.generateLink({
+    type: "recovery",
+    email,
+    options: {
+      redirectTo: `${appBaseUrl}/reset-password/update`,
+    },
+  });
+
+  if (error || !data.properties?.action_link) {
+    throw new Error(error?.message ?? "Failed to generate recovery link");
+  }
+
+  const verifyResponse = await fetch(data.properties.action_link, {
+    method: "GET",
+    redirect: "manual",
+  });
+  const redirectLocation = verifyResponse.headers.get("location");
+
+  if (!redirectLocation) {
+    throw new Error("Supabase recovery link did not return a redirect location");
+  }
+
+  const recoveryUrl = new URL(redirectLocation);
+  recoveryUrl.protocol = new URL(appBaseUrl).protocol;
+  recoveryUrl.host = new URL(appBaseUrl).host;
+  return recoveryUrl.toString();
+}
 
 test.describe("Invitation & Registration pages (no auth required)", () => {
   test("register page without token shows error", async ({ page }) => {
@@ -10,9 +51,9 @@ test.describe("Invitation & Registration pages (no auth required)", () => {
 
   test("register page with invalid token shows invalid invitation", async ({ page }) => {
     await page.goto("/register?token=invalid-token-12345");
-    await expect(
-      page.getByText(/invalid invitation/i)
-    ).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("Invalid Invitation", { exact: true })).toBeVisible({
+      timeout: 10_000,
+    });
   });
 
   test("register page shows LRC branding", async ({ page }) => {
@@ -37,9 +78,11 @@ test.describe("Password Reset pages (no auth required)", () => {
   });
 
   test("reset password update validates matching passwords", async ({ page }) => {
-    await page.goto("/reset-password/update");
-    await page.getByLabel("New Password").fill("password123");
-    await page.getByLabel("Confirm Password").fill("different456");
+    test.skip(!canGenerateRecoveryLink, "Recovery-link generation is not available");
+    const recoveryUrl = await generateRecoveryLink(recoveryEmail);
+    await page.goto(recoveryUrl);
+    await page.getByLabel("New Password").fill("Rowing!Aa1");
+    await page.getByLabel("Confirm Password").fill("Boats!Bb2C");
     await page.getByRole("button", { name: /update password/i }).click();
     await expect(page.getByText(/passwords do not match/i)).toBeVisible();
   });

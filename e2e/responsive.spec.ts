@@ -16,12 +16,14 @@ test.describe("Responsive layout - no auth", () => {
   test("login page works on tablet", async ({ page }) => {
     await page.setViewportSize({ width: 768, height: 1024 });
     await page.goto("/login");
-    await expect(page.getByRole("heading", { name: /sign in/i })).toBeVisible();
+    await expect(page.getByText("Leichhardt Rowing Club")).toBeVisible();
+    await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
   });
 
   test("login page works on desktop", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/login");
-    await expect(page.getByRole("heading", { name: /sign in/i })).toBeVisible();
+    await expect(page.getByText("Leichhardt Rowing Club")).toBeVisible();
+    await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible();
   });
 });

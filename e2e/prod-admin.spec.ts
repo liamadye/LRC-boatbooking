@@ -1,13 +1,13 @@
 import { test, expect, type Page } from "@playwright/test";
 
-const hasAuth = !!(process.env.E2E_USER_EMAIL && process.env.E2E_USER_PASSWORD);
-const userEmail = process.env.E2E_USER_EMAIL ?? "";
-const userPassword = process.env.E2E_USER_PASSWORD ?? "";
+const adminEmail = process.env.E2E_ADMIN_EMAIL ?? process.env.E2E_USER_EMAIL ?? "";
+const adminPassword = process.env.E2E_ADMIN_PASSWORD ?? process.env.E2E_USER_PASSWORD ?? "";
+const hasAuth = !!(adminEmail && adminPassword);
 
 async function login(page: Page) {
   await page.goto("/login");
-  await page.getByLabel("Email").fill(userEmail);
-  await page.getByLabel("Password").fill(userPassword);
+  await page.getByLabel("Email").fill(adminEmail);
+  await page.getByLabel("Password").fill(adminPassword);
   await page.getByRole("button", { name: /sign in/i }).click();
   await expect(page).toHaveURL(/\/bookings/, { timeout: 15_000 });
 }

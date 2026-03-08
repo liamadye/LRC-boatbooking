@@ -26,8 +26,7 @@ test.describe("Booking grid", () => {
     const heading = page.getByText(/Bookings — W\/C/);
     const initialText = await heading.textContent();
 
-    // Click next week arrow
-    await page.locator("button").filter({ has: page.locator("svg") }).last().click();
+    await page.getByRole("button", { name: "Next week" }).click();
     await expect(heading).not.toHaveText(initialText!);
   });
 
@@ -69,13 +68,10 @@ test.describe("Booking grid - mobile", () => {
   test("mobile nav hamburger works", async ({ page }) => {
     await page.goto("/bookings");
 
-    // Hamburger menu button should exist on mobile
-    const menuBtn = page.locator("button").filter({ has: page.locator("svg") }).first();
-    await menuBtn.click();
+    await page.getByRole("button", { name: "Open navigation menu" }).click();
 
-    // Nav links should appear
-    await expect(page.getByRole("link", { name: "Bookings" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "My Bookings" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Profile" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Bookings", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "My Bookings", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Profile", exact: true })).toBeVisible();
   });
 });

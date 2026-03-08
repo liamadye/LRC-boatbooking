@@ -69,6 +69,8 @@ export function AppNav({ userEmail, userRole }: { userEmail: string; userRole: s
           </Button>
           {/* Mobile hamburger */}
           <button
+            type="button"
+            aria-label={mobileOpen ? "Close navigation menu" : "Open navigation menu"}
             className="sm:hidden p-2 -mr-2 rounded-md hover:bg-gray-100"
             onClick={() => setMobileOpen(!mobileOpen)}
           >

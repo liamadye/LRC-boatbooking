@@ -5,10 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useState, useEffect, useMemo, Suspense } from "react";
+import { useState, useEffect, useMemo, Suspense, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { PasswordRequirements } from "@/components/password-requirements";
-import { PASSWORD_MIN_LENGTH, validatePassword } from "@/lib/passwords";
+import { validatePassword } from "@/lib/passwords";
 import { clearAuthRedirectState, getHashAuthParams, hydrateSessionFromHash } from "@/lib/supabase/browser-auth";
 
 export default function RegisterPage() {
@@ -39,6 +39,9 @@ function RegisterForm() {
   const [hasSession, setHasSession] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
   const [requiresInviteSession, setRequiresInviteSession] = useState(false);
+  const fullNameRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const confirmPasswordRef = useRef<HTMLInputElement>(null);
 
   const supabase = useMemo(() => createClient(), []);
 
@@ -126,14 +129,24 @@ function RegisterForm() {
     };
   }, [supabase]);
 
-  async function handleRegister(e: React.FormEvent) {
+  async function handleRegister(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
-    const passwordError = validatePassword(password, confirmPassword);
+    const submittedFullName = (fullNameRef.current?.value ?? fullName).trim();
+    const submittedPassword = passwordRef.current?.value ?? password;
+    const submittedConfirmPassword = confirmPasswordRef.current?.value ?? confirmPassword;
+
+    const passwordError = validatePassword(submittedPassword, submittedConfirmPassword);
     if (passwordError) {
       setError(passwordError);
+      setLoading(false);
+      return;
+    }
+
+    if (!submittedFullName) {
+      setError("Full name is required.");
       setLoading(false);
       return;
     }
@@ -148,8 +161,8 @@ function RegisterForm() {
       // User came via Supabase invite email — already authenticated
       // Set their password so they can log in with email/password in future
       const { error: updateError } = await supabase.auth.updateUser({
-        password,
-        data: { full_name: fullName },
+        password: submittedPassword,
+        data: { full_name: submittedFullName },
       });
 
       if (updateError) {
@@ -161,9 +174,9 @@ function RegisterForm() {
       // Manual link flow — create Supabase auth user
       const { error: signUpError } = await supabase.auth.signUp({
         email,
-        password,
+        password: submittedPassword,
         options: {
-          data: { full_name: fullName },
+          data: { full_name: submittedFullName },
         },
       });
 
@@ -172,7 +185,7 @@ function RegisterForm() {
         if (signUpError.message.includes("already registered")) {
           const { error: signInError } = await supabase.auth.signInWithPassword({
             email,
-            password,
+            password: submittedPassword,
           });
           if (signInError) {
             setError("This email was already registered via invite. Please set your password using the invite link from your email.");
@@ -194,7 +207,7 @@ function RegisterForm() {
     if (!activeSession) {
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email,
-        password,
+        password: submittedPassword,
       });
 
       if (signInError) {
@@ -208,7 +221,7 @@ function RegisterForm() {
     const res = await fetch("/api/register/accept", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, fullName }),
+      body: JSON.stringify({ token, fullName: submittedFullName }),
     });
 
     if (!res.ok) {
@@ -275,6 +288,8 @@ function RegisterForm() {
               <Label htmlFor="fullName">Full Name</Label>
               <Input
                 id="fullName"
+                name="fullName"
+                ref={fullNameRef}
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 placeholder="Your full name"
@@ -285,24 +300,24 @@ function RegisterForm() {
               <Label htmlFor="password">Password</Label>
               <Input
                 id="password"
+                name="password"
+                ref={passwordRef}
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder={hasSession ? "Set your password" : "Choose a password"}
-                required
-                minLength={PASSWORD_MIN_LENGTH}
               />
             </div>
             <div>
               <Label htmlFor="confirmPassword">Confirm Password</Label>
               <Input
                 id="confirmPassword"
+                name="confirmPassword"
+                ref={confirmPasswordRef}
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Re-enter your password"
-                required
-                minLength={PASSWORD_MIN_LENGTH}
               />
             </div>
             <PasswordRequirements password={password} />
