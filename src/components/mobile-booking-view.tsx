@@ -186,13 +186,15 @@ export function MobileBookingView({
       {/* Filter toggle */}
       <button
         onClick={() => setShowFilters(!showFilters)}
+        aria-expanded={showFilters}
+        aria-label={`Toggle filters${activeFilterCount > 0 ? ` (${activeFilterCount} active)` : ""}`}
         className={cn(
-          "w-full flex items-center justify-between px-3 py-2 rounded-lg border text-sm",
+          "w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm min-h-[44px]",
           activeFilterCount > 0 ? "bg-blue-50 border-blue-200" : "bg-white"
         )}
       >
         <span className="flex items-center gap-2">
-          <Filter className="h-4 w-4" />
+          <Filter className="h-5 w-5" />
           Filters
           {activeFilterCount > 0 && (
             <span className="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded-full">
@@ -200,7 +202,7 @@ export function MobileBookingView({
             </span>
           )}
         </span>
-        {showFilters ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        {showFilters ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
       </button>
 
       {showFilters && (
@@ -216,7 +218,7 @@ export function MobileBookingView({
                   key={f.value}
                   onClick={() => setFilters((prev) => ({ ...prev, boatType: f.value as MobileFilters["boatType"] }))}
                   className={cn(
-                    "px-3 py-1 rounded-full text-xs font-medium border transition-colors",
+                    "px-3 py-2 rounded-full text-sm font-medium border transition-colors min-h-[44px]",
                     filters.boatType === f.value
                       ? "bg-blue-600 text-white border-blue-600"
                       : "bg-white text-gray-600 border-gray-200"
@@ -235,7 +237,7 @@ export function MobileBookingView({
                 Restriction
               </label>
               <select
-                className="mt-1 w-full text-sm border rounded px-2 py-1.5"
+                className="mt-1 w-full text-base border rounded px-2 py-2 min-h-[44px]"
                 value={filters.classification}
                 onChange={(e) =>
                   setFilters((prev) => ({
@@ -254,7 +256,7 @@ export function MobileBookingView({
                 Availability
               </label>
               <select
-                className="mt-1 w-full text-sm border rounded px-2 py-1.5"
+                className="mt-1 w-full text-base border rounded px-2 py-2 min-h-[44px]"
                 value={filters.availability}
                 onChange={(e) =>
                   setFilters((prev) => ({
@@ -384,15 +386,15 @@ export function MobileBookingView({
                     <div key={group.label}>
                       <button
                         onClick={() => toggleCategory(categoryKey)}
-                        className="w-full px-3 py-1.5 text-left flex items-center justify-between bg-green-50/50 hover:bg-green-50 transition-colors border-t first:border-t-0"
+                        className="w-full px-3 py-2.5 text-left flex items-center justify-between bg-green-50/50 hover:bg-green-50 transition-colors border-t first:border-t-0 min-h-[44px]"
                       >
                         <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
                           {group.label} ({group.boats.length})
                         </span>
                         {isCollapsed ? (
-                          <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
                         ) : (
-                          <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
                         )}
                       </button>
                       {!isCollapsed && (

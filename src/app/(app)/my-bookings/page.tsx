@@ -64,7 +64,18 @@ export default function MyBookingsPage() {
   }
 
   if (loading) {
-    return <div className="p-8 text-center text-muted-foreground">Loading...</div>;
+    return (
+      <div className="max-w-2xl mx-auto space-y-4">
+        <div className="h-7 w-36 bg-gray-200 rounded animate-pulse" />
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="rounded-lg border bg-white p-4 space-y-2">
+            <div className="h-5 w-48 bg-gray-200 rounded animate-pulse" />
+            <div className="h-4 w-64 bg-gray-100 rounded animate-pulse" />
+            <div className="h-4 w-40 bg-gray-100 rounded animate-pulse" />
+          </div>
+        ))}
+      </div>
+    );
   }
 
   return (
@@ -109,8 +120,9 @@ export default function MyBookingsPage() {
                 size="icon"
                 className="text-red-500 hover:text-red-700 hover:bg-red-50"
                 onClick={() => handleCancel(booking.id)}
+                aria-label={`Cancel booking for ${booking.boat?.name ?? booking.resourceType}`}
               >
-                <Trash2 className="h-4 w-4" />
+                <Trash2 className="h-4 w-4" aria-hidden="true" />
               </Button>
             </CardContent>
           </Card>

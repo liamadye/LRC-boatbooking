@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, memo } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { getBookingDisplayName } from "@/lib/booking-utils";
@@ -208,36 +208,39 @@ export function BookingGrid({
       )}
       <TotalsBar inShed={totals.inShed} rowing={totals.rowing} />
 
-      {/* Mobile view */}
-      <MobileBookingView
-        boats={boats}
-        equipment={equipment}
-        oarSets={oarSets}
-        dayBookings={dayBookings}
-        selectedDate={selectedDate}
-        user={user}
-        boatMap={boatMap}
-        equipMap={equipMap}
-        oarMap={oarMap}
-        onBookingClick={(booking) => setSelectedBooking(booking)}
-        onSlotClick={(type, id, name, slot) =>
-          setBookingTarget({ resourceType: type, resourceId: id, resourceName: name, slot })
-        }
-      />
+      {/* Mobile view — only shown when there are boats */}
+      {boats.length > 0 && (
+        <MobileBookingView
+          boats={boats}
+          equipment={equipment}
+          oarSets={oarSets}
+          dayBookings={dayBookings}
+          selectedDate={selectedDate}
+          user={user}
+          boatMap={boatMap}
+          equipMap={equipMap}
+          oarMap={oarMap}
+          onBookingClick={(booking) => setSelectedBooking(booking)}
+          onSlotClick={(type, id, name, slot) =>
+            setBookingTarget({ resourceType: type, resourceId: id, resourceName: name, slot })
+          }
+        />
+      )}
 
-      {/* Desktop view */}
-      <div className="overflow-x-auto rounded-lg border bg-white hidden md:block">
+      {/* Desktop view (always visible on mobile for equipment-only/gym tab) */}
+      <div className={cn("overflow-x-auto rounded-lg border bg-white", boats.length > 0 && "hidden md:block")}>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-gray-50">
-              <th className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left font-medium w-48">
-                Boat
+              <th scope="col" className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left font-medium w-48">
+                {boats.length > 0 ? "Boat" : "Equipment"}
               </th>
-              <th className="px-2 py-2 text-left font-medium w-20">Type</th>
-              <th className="px-2 py-2 text-left font-medium w-16">Wt</th>
-              <th className="px-2 py-2 text-left font-medium w-28">Squad</th>
+              <th scope="col" className="px-2 py-2 text-left font-medium w-20">Type</th>
+              <th scope="col" className="px-2 py-2 text-left font-medium w-16">Wt</th>
+              <th scope="col" className="px-2 py-2 text-left font-medium w-28">Squad</th>
               {TIME_SLOTS.map((ts) => (
                 <th
+                  scope="col"
                   key={ts.slot}
                   className="px-2 py-2 text-center font-medium min-w-[110px]"
                 >
@@ -280,7 +283,7 @@ export function BookingGrid({
             })}
 
             {/* Oar Sets */}
-            <SectionGroup>
+            {oarSets.length > 0 && <SectionGroup>
               <SectionHeader
                 label="Oar Sets"
                 count={oarSets.length}
@@ -301,10 +304,10 @@ export function BookingGrid({
                     currentUserId={user.id}
                   />
                 ))}
-            </SectionGroup>
+            </SectionGroup>}
 
             {/* Private Boats */}
-            <SectionGroup>
+            {privateBoats.length > 0 && <SectionGroup>
               <SectionHeader
                 label="Private Boats"
                 count={privateBoats.length}
@@ -323,10 +326,10 @@ export function BookingGrid({
                     currentUserId={user.id}
                   />
                 ))}
-            </SectionGroup>
+            </SectionGroup>}
 
             {/* Tinnies */}
-            <SectionGroup>
+            {tinnies.length > 0 && <SectionGroup>
               <SectionHeader
                 label="Tinnies (Coach Boats)"
                 count={tinnies.length}
@@ -345,10 +348,10 @@ export function BookingGrid({
                     currentUserId={user.id}
                   />
                 ))}
-            </SectionGroup>
+            </SectionGroup>}
 
             {/* Equipment */}
-            <SectionGroup>
+            {equipment.length > 0 && <SectionGroup>
               <SectionHeader
                 label="Ergs, Bikes & Gym"
                 count={equipment.length}
@@ -397,7 +400,7 @@ export function BookingGrid({
                   ))}
                 </>
               )}
-            </SectionGroup>
+            </SectionGroup>}
           </tbody>
         </table>
       </div>
@@ -443,7 +446,7 @@ function SectionGroup({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function SectionHeader({
+const SectionHeader = memo(function SectionHeader({
   label,
   count,
   isCollapsed,
@@ -460,13 +463,17 @@ function SectionHeader({
     <tr
       className={cn("border-t cursor-pointer hover:bg-gray-100", colorClass)}
       onClick={onToggle}
+      role="button"
+      tabIndex={0}
+      aria-expanded={!isCollapsed}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } }}
     >
       <td colSpan={4 + TIME_SLOTS.length} className="px-3 py-2 font-semibold">
         <div className="flex items-center gap-2">
           {isCollapsed ? (
-            <ChevronRight className="h-4 w-4" />
+            <ChevronRight className="h-4 w-4" aria-hidden="true" />
           ) : (
-            <ChevronDown className="h-4 w-4" />
+            <ChevronDown className="h-4 w-4" aria-hidden="true" />
           )}
           {label}
           <span className="text-xs text-muted-foreground font-normal">
@@ -476,9 +483,9 @@ function SectionHeader({
       </td>
     </tr>
   );
-}
+});
 
-function BoatRow({
+const BoatRow = memo(function BoatRow({
   boat,
   getBooking,
   onCellClick,
@@ -500,13 +507,13 @@ function BoatRow({
       <td className={cn("sticky left-0 z-10 px-3 py-1.5 font-medium", colorClass)}>
         <div className="flex items-center gap-1.5">
           {isBlack && (
-            <span title="Black boat (restricted)"><Circle className="h-3 w-3 fill-gray-800 text-gray-800" /></span>
+            <span title="Black boat (restricted)"><Circle className="h-3 w-3 fill-gray-800 text-gray-800" aria-hidden="true" /><span className="sr-only">Black boat (restricted)</span></span>
           )}
           {!isBlack && !isPrivate && (
-            <span title="Green boat (open)"><Circle className="h-3 w-3 fill-green-500 text-green-500" /></span>
+            <span title="Green boat (open)"><Circle className="h-3 w-3 fill-green-500 text-green-500" aria-hidden="true" /><span className="sr-only">Green boat (open)</span></span>
           )}
-          {isPrivate && <span title="Private boat"><Lock className="h-3 w-3 text-blue-500" /></span>}
-          {isNotInUse && <span title="Not in use"><Ban className="h-3 w-3 text-red-500" /></span>}
+          {isPrivate && <span title="Private boat"><Lock className="h-3 w-3 text-blue-500" aria-hidden="true" /><span className="sr-only">Private boat</span></span>}
+          {isNotInUse && <span title="Not in use"><Ban className="h-3 w-3 text-red-500" aria-hidden="true" /><span className="sr-only">Not in use</span></span>}
           <span className="truncate max-w-[160px]">{boat.name}</span>
         </div>
       </td>
@@ -533,9 +540,9 @@ function BoatRow({
       })}
     </tr>
   );
-}
+});
 
-function ResourceRow({
+const ResourceRow = memo(function ResourceRow({
   id,
   name,
   subtitle,
@@ -582,7 +589,7 @@ function ResourceRow({
       })}
     </tr>
   );
-}
+});
 
 function RefreshIndicator({
   loadedAt,
@@ -621,16 +628,17 @@ function RefreshIndicator({
       <button
         onClick={handleRefresh}
         disabled={refreshing}
+        aria-label="Refresh bookings"
         className="inline-flex items-center gap-1 rounded px-2 py-1 hover:bg-gray-100 transition-colors disabled:opacity-50"
       >
-        <RefreshCw className={cn("h-3 w-3", refreshing && "animate-spin")} />
+        <RefreshCw className={cn("h-3 w-3", refreshing && "animate-spin")} aria-hidden="true" />
         Refresh
       </button>
     </div>
   );
 }
 
-function BookingCell({
+const BookingCell = memo(function BookingCell({
   booking,
   isNotInUse,
   currentUserId,
@@ -691,7 +699,8 @@ function BookingCell({
         className="h-8 w-full rounded border border-dashed border-gray-200 hover:border-blue-400 hover:bg-blue-50/50 transition-colors"
         onClick={onClick}
         title="Click to book"
+        aria-label="Book this slot"
       />
     </td>
   );
-}
+});

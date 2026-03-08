@@ -15,6 +15,7 @@ export type BoatWithRelations = {
   displayOrder: number;
   notes: string | null;
   responsibleSquad?: { id: string; name: string } | null;
+  privateBoatAccessUserIds?: string[];
 };
 
 export type EquipmentItem = {

@@ -11,7 +11,7 @@ Next.js + Supabase + Prisma app for Leichhardt Rowing Club booking management.
 
 ## Environment Variables
 
-Create `app/.env` with:
+Create `.env` with:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=...
@@ -46,6 +46,35 @@ Run against any deployed URL:
 
 ```bash
 bash scripts/smoke.sh https://your-deployment.vercel.app
+```
+
+## Real Email Budget
+
+Invite/recovery end-to-end tests can send real emails. Any future test code on this branch should reserve email budget before sending them.
+
+Default policy:
+
+- real email budget: `5`
+- going above `5` requires explicit approval via `REAL_EMAIL_BUDGET_APPROVED=1`
+- non-routable test domains such as `example.com` do not count against the budget
+
+Reset the run budget:
+
+```bash
+npm run email-budget -- --reset
+```
+
+Reserve budget for planned sends:
+
+```bash
+npm run email-budget -- person1@example.com
+npm run email-budget -- liam+signup-123@liamdye.com
+```
+
+The second command above will count against the budget because it targets a real inbox domain. If a test run genuinely needs more than five real emails, require explicit approval first and then run with:
+
+```bash
+REAL_EMAIL_BUDGET_APPROVED=1 npm run email-budget -- liam+signup-123@liamdye.com
 ```
 
 ## Vercel Deployment

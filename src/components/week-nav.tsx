@@ -34,12 +34,12 @@ export function WeekNav({
       <Button
         variant="ghost"
         size="icon"
-        className="h-8 w-8 flex-shrink-0"
+        className="h-10 w-10 flex-shrink-0"
         aria-label="Previous week"
         disabled={loading}
         onClick={() => navigateTo(addDays(weekDays[0], -7))}
       >
-        <ChevronLeft className="h-4 w-4" />
+        <ChevronLeft className="h-5 w-5" />
       </Button>
 
       <div className="flex gap-0.5 sm:gap-1 overflow-x-auto">
@@ -49,7 +49,7 @@ export function WeekNav({
             onClick={() => navigateTo(day)}
             disabled={loading}
             className={cn(
-              "px-1.5 sm:px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium transition-colors flex-shrink-0",
+              "px-2 sm:px-3 py-2 rounded-md text-xs sm:text-sm font-medium transition-colors flex-shrink-0 min-h-[44px] min-w-[44px]",
               isSameDay(day, selectedDate)
                 ? "bg-blue-600 text-white"
                 : "bg-white border text-gray-700 hover:bg-gray-50",
@@ -67,12 +67,12 @@ export function WeekNav({
       <Button
         variant="ghost"
         size="icon"
-        className="h-8 w-8 flex-shrink-0"
+        className="h-10 w-10 flex-shrink-0"
         aria-label="Next week"
         disabled={loading}
         onClick={() => navigateTo(addDays(weekDays[0], 7))}
       >
-        <ChevronRight className="h-4 w-4" />
+        <ChevronRight className="h-5 w-5" />
       </Button>
     </div>
   );

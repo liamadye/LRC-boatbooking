@@ -14,7 +14,7 @@ export default async function AdminPage() {
 
   const [boats, squads, users, applications, invitations] = await Promise.all([
     prisma.boat.findMany({
-      include: { responsibleSquad: true },
+      include: { responsibleSquad: true, privateBoatAccess: { select: { userId: true } } },
       orderBy: { displayOrder: "asc" },
     }),
     prisma.squad.findMany({ orderBy: { name: "asc" } }),
@@ -41,6 +41,7 @@ export default async function AdminPage() {
         boats={boats.map((b) => ({
           ...b,
           avgWeightKg: b.avgWeightKg ? Number(b.avgWeightKg) : null,
+          privateBoatAccessUserIds: b.privateBoatAccess.map((a) => a.userId),
         }))}
         squads={squads}
         users={users.map((u) => ({

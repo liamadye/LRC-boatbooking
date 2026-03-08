@@ -25,10 +25,27 @@ export async function PATCH(
   if (body.classification) updateData.classification = body.classification;
   if (body.responsibleSquadId !== undefined)
     updateData.responsibleSquadId = body.responsibleSquadId;
+  if (body.ownerUserId !== undefined)
+    updateData.ownerUserId = body.ownerUserId || null;
+
+  // Handle private boat access list
+  if (Array.isArray(body.privateBoatAccessUserIds)) {
+    await prisma.privateBoatAccess.deleteMany({ where: { boatId: id } });
+    if (body.privateBoatAccessUserIds.length > 0) {
+      await prisma.privateBoatAccess.createMany({
+        data: body.privateBoatAccessUserIds.map((userId: string) => ({
+          boatId: id,
+          userId,
+        })),
+        skipDuplicates: true,
+      });
+    }
+  }
 
   const boat = await prisma.boat.update({
     where: { id },
     data: updateData,
+    include: { privateBoatAccess: { select: { userId: true } } },
   });
 
   await logAudit({

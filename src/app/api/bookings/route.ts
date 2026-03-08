@@ -135,7 +135,10 @@ export async function POST(request: NextRequest) {
   let equipmentItem = null;
 
   if (resourceType === "boat") {
-    boat = await prisma.boat.findUnique({ where: { id: resourceId } });
+    boat = await prisma.boat.findUnique({
+      where: { id: resourceId },
+      include: { privateBoatAccess: { select: { userId: true } } },
+    });
     if (!boat) {
       return NextResponse.json({ error: "Boat not found" }, { status: 404 });
     }
@@ -203,6 +206,7 @@ export async function POST(request: NextRequest) {
     boatStatus: boat?.status as "available" | "not_in_use" | undefined,
     boatAvgWeightKg: boat?.avgWeightKg ? Number(boat.avgWeightKg) : null,
     boatOwnerUserId: boat?.ownerUserId,
+    privateBoatAccessUserIds: (boat as { privateBoatAccess?: { userId: string }[] } | null)?.privateBoatAccess?.map((a) => a.userId) ?? [],
     isOutside: boat?.isOutside,
     crewCount,
     crewAvgWeightKg: user.weightKg ? Number(user.weightKg) : null,
