@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { TIME_SLOTS, MAX_CREW, BOAT_SECTIONS } from "@/lib/constants";
 import { getBookingDisplayName } from "@/lib/booking-utils";
-import { Circle, Lock, ChevronDown, ChevronRight, Filter } from "lucide-react";
+import { Circle, Lock, ChevronDown, ChevronRight, Filter, Loader2 } from "lucide-react";
 import type {
   BoatWithRelations,
   EquipmentItem,
@@ -319,17 +319,30 @@ export function MobileBookingView({
                   const oar = oarMap.get(booking.oarSetId ?? "");
                   const resourceName = boat?.name ?? (equip ? `${equip.type} ${equip.number}` : oar?.name ?? "Unknown");
                   const isOwn = booking.userId === user.id;
+                  const isPending = booking.clientStatus === "pending";
 
                   return (
                     <button
                       key={booking.id}
                       className={cn(
                         "w-full px-3 py-2.5 text-left text-sm flex items-center justify-between active:bg-gray-100",
-                        isOwn ? "bg-blue-50" : "bg-gray-50/50"
+                        isPending
+                          ? "bg-amber-50"
+                          : isOwn
+                            ? "bg-blue-50"
+                            : "bg-gray-50/50"
                       )}
-                      onClick={() => onBookingClick(booking)}
+                      onClick={() => {
+                        if (!isPending) {
+                          onBookingClick(booking);
+                        }
+                      }}
+                      disabled={isPending}
                     >
                       <div className="flex items-center gap-2 min-w-0">
+                        {isPending && (
+                          <Loader2 className="h-3 w-3 flex-shrink-0 animate-spin text-amber-700" />
+                        )}
                         {boat && (
                           <span className="flex-shrink-0">
                             {boat.classification === "black" ? (
@@ -346,7 +359,11 @@ export function MobileBookingView({
                       </div>
                       <div className={cn(
                         "text-xs px-2 py-0.5 rounded-full flex-shrink-0 ml-2",
-                        isOwn ? "bg-blue-200 text-blue-800" : "bg-gray-200 text-gray-700"
+                        isPending
+                          ? "bg-amber-200 text-amber-900"
+                          : isOwn
+                            ? "bg-blue-200 text-blue-800"
+                            : "bg-gray-200 text-gray-700"
                       )}>
                         {getBookingDisplayName(booking)} ({booking.crewCount})
                       </div>
