@@ -53,7 +53,9 @@ export function InviteManagement({
       await navigator.clipboard.writeText(inviteUrl);
       toast({
         title: "Invitation created",
-        description: "Invite link copied to clipboard. Share it with the member.",
+        description: data.emailSent
+          ? "Invitation email sent! Link also copied to clipboard."
+          : "Invite link copied to clipboard. Share it with the member.",
       });
       setEmail("");
       router.refresh();

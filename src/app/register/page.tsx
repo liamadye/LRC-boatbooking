@@ -31,6 +31,7 @@ function RegisterForm() {
   const [error, setError] = useState<string | null>(null);
   const [validating, setValidating] = useState(true);
   const [valid, setValid] = useState(false);
+  const [hasSession, setHasSession] = useState(false);
 
   const supabase = createClient();
 
@@ -41,41 +42,81 @@ function RegisterForm() {
       return;
     }
 
-    fetch(`/api/register/validate?token=${token}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.error) {
-          setError(data.error);
-        } else {
-          setValid(true);
+    async function init() {
+      // Check if user already has a session (from Supabase invite email flow)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.email) {
+        setHasSession(true);
+        setEmail(session.user.email);
+      }
+
+      // Validate the invitation token
+      const res = await fetch(`/api/register/validate?token=${token}`);
+      const data = await res.json();
+
+      if (data.error) {
+        setError(data.error);
+      } else {
+        setValid(true);
+        if (!session?.user?.email) {
           setEmail(data.email);
         }
-        setValidating(false);
-      })
-      .catch(() => {
-        setError("Failed to validate invitation.");
-        setValidating(false);
-      });
-  }, [token]);
+      }
+      setValidating(false);
+    }
+
+    init().catch(() => {
+      setError("Failed to validate invitation.");
+      setValidating(false);
+    });
+  }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
-    // Sign up via Supabase
-    const { error: signUpError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
+    if (hasSession) {
+      // User came via Supabase invite email — already authenticated
+      // Set their password so they can log in with email/password in future
+      const { error: updateError } = await supabase.auth.updateUser({
+        password,
         data: { full_name: fullName },
-      },
-    });
+      });
 
-    if (signUpError) {
-      setError(signUpError.message);
-      setLoading(false);
-      return;
+      if (updateError) {
+        setError(updateError.message);
+        setLoading(false);
+        return;
+      }
+    } else {
+      // Manual link flow — create Supabase auth user
+      const { error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { full_name: fullName },
+        },
+      });
+
+      if (signUpError) {
+        // If user already exists (from invite), try signing in instead
+        if (signUpError.message.includes("already registered")) {
+          const { error: signInError } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+          });
+          if (signInError) {
+            setError("This email was already registered via invite. Please set your password using the invite link from your email.");
+            setLoading(false);
+            return;
+          }
+        } else {
+          setError(signUpError.message);
+          setLoading(false);
+          return;
+        }
+      }
     }
 
     // Accept the invitation (creates the user profile with correct role/memberType)
@@ -162,7 +203,7 @@ function RegisterForm() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Choose a password"
+                placeholder={hasSession ? "Set your password" : "Choose a password"}
                 required
                 minLength={6}
               />
