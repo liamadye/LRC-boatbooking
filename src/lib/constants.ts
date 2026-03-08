@@ -53,7 +53,7 @@ export const MEMBER_TIME_RESTRICTIONS = {
   },
   recreational: {
     weekday: { earliestSlot: 2, latestReturnSlot: 6 }, // after 5:45am - 7:30am (green only)
-    weekend: { earliestSlot: 3, latestReturnSlot: 6 }, // 6am - 8am (green only)
+    weekend: { earliestSlot: 1, latestReturnSlot: 6 }, // no early restriction on weekends
   },
 } as const;
 

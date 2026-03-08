@@ -63,7 +63,7 @@ export function BookingModal({
   const [nameMode, setNameMode] = useState<"squad" | "custom">(
     isBigBoat && user.squads.length > 0 ? "squad" : "custom"
   );
-  const [crewCount, setCrewCount] = useState(1);
+  const crewCount = boat ? (MAX_CREW[boat.boatType] ?? 1) : 1;
   const [endSlot, setEndSlot] = useState(target.slot);
   const [isRaceSpecific, setIsRaceSpecific] = useState(false);
   const [raceDetails, setRaceDetails] = useState("");
@@ -201,18 +201,11 @@ export function BookingModal({
             </div>
           )}
 
-          <div>
-            <Label htmlFor="crewCount">Number in boat / crew</Label>
-            <Input
-              id="crewCount"
-              type="number"
-              min={1}
-              max={9}
-              value={crewCount}
-              onChange={(e) => setCrewCount(parseInt(e.target.value) || 1)}
-              required
-            />
-          </div>
+          {boat && (
+            <div className="text-sm text-muted-foreground">
+              Crew size: {crewCount}
+            </div>
+          )}
 
           <div>
             <Label htmlFor="endSlot">Book through to slot</Label>
