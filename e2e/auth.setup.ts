@@ -1,3 +1,5 @@
+import { mkdirSync } from "fs";
+import { dirname } from "path";
 import { test as setup, expect } from "@playwright/test";
 
 /**
@@ -31,5 +33,6 @@ setup("authenticate", async ({ page }) => {
   // Wait for redirect to bookings page
   await expect(page).toHaveURL(/\/bookings/, { timeout: 15_000 });
 
+  mkdirSync(dirname(storageStatePath), { recursive: true });
   await page.context().storageState({ path: storageStatePath });
 });

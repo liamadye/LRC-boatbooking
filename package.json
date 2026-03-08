@@ -9,6 +9,9 @@
     "lint": "next lint",
     "smoke": "bash scripts/smoke.sh",
     "test:e2e": "playwright test",
+    "test:e2e:prod": "playwright test e2e/prod-safe.spec.ts",
+    "test:e2e:prod:auth": "playwright test e2e/prod-auth.spec.ts",
+    "test:e2e:prod:iphone": "playwright test e2e/prod-safe.spec.ts e2e/prod-auth.spec.ts e2e/prod-admin.spec.ts --project=iphone-safari",
     "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {

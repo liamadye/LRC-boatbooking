@@ -22,6 +22,11 @@ type Invitation = {
   inviter: { fullName: string };
 };
 
+type InviteLinkResponse = {
+  inviteUrl: string;
+  deliveryMode?: "manual_action_link" | "manual_register_link";
+};
+
 export function InviteManagement({
   invitations,
 }: {
@@ -55,14 +60,15 @@ export function InviteManagement({
     if (!res.ok) {
       toast({ title: "Error", description: data.error, variant: "destructive" });
     } else {
-      const inviteUrl = `${window.location.origin}/register?token=${data.token}`;
-      await navigator.clipboard.writeText(inviteUrl);
       toast({
         title: "Invitation created",
         description: data.emailSent
-          ? "Invitation email sent! Link also copied to clipboard."
-          : "Invite link copied to clipboard. Share it with the member.",
+          ? "Invitation email sent."
+          : "Invite email could not be sent. A shareable invite link has been copied.",
       });
+      if (data.inviteUrl) {
+        await navigator.clipboard.writeText(data.inviteUrl);
+      }
       setEmail("");
       router.refresh();
     }
@@ -70,10 +76,27 @@ export function InviteManagement({
     setLoading(false);
   }
 
-  function copyLink(token: string) {
-    const url = `${window.location.origin}/register?token=${token}`;
-    navigator.clipboard.writeText(url);
-    toast({ title: "Link copied to clipboard" });
+  async function copyLink(invitation: Invitation) {
+    const res = await fetch(`/api/admin/invitations/${invitation.id}`);
+    const data = (await res.json()) as InviteLinkResponse & { error?: string };
+
+    if (!res.ok) {
+      toast({
+        title: "Failed to copy invitation link",
+        description: data.error ?? "Unknown error",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    await navigator.clipboard.writeText(data.inviteUrl);
+    toast({
+      title: "Link copied to clipboard",
+      description:
+        data.deliveryMode === "manual_action_link"
+          ? "Share this link directly with the member."
+          : undefined,
+    });
   }
 
   async function resendInvitation(invitation: Invitation) {
@@ -93,16 +116,16 @@ export function InviteManagement({
       return;
     }
 
-    const inviteUrl = `${window.location.origin}/register?token=${data.token}`;
-    await navigator.clipboard.writeText(inviteUrl);
+    await navigator.clipboard.writeText(data.inviteUrl);
     setInviteRows((prev) =>
       prev.map((inv) => (inv.id === invitation.id ? (data as Invitation) : inv))
     );
     toast({
-      title: "Invitation resent",
-      description: data.emailSent
-        ? "Invitation email sent and new invite link copied."
-        : "Invite renewed and new link copied. Share it manually.",
+      title: "Invitation renewed",
+      description:
+        data.deliveryMode === "manual_action_link"
+          ? "A fresh invite link has been copied. Supabase will not automatically resend the email for an already-invited user."
+          : "A fresh invite link has been copied.",
     });
     setActionLoadingId(null);
     router.refresh();
@@ -214,7 +237,7 @@ export function InviteManagement({
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => copyLink(inv.token)}
+                      onClick={() => copyLink(inv)}
                     >
                       <Copy className="h-4 w-4 mr-1" />
                       Copy Link
@@ -226,7 +249,7 @@ export function InviteManagement({
                       onClick={() => resendInvitation(inv)}
                     >
                       <RefreshCw className="h-4 w-4 mr-1" />
-                      Resend
+                      Renew Link
                     </Button>
                     <Button
                       variant="ghost"
@@ -288,7 +311,7 @@ export function InviteManagement({
                       onClick={() => resendInvitation(inv)}
                     >
                       <RefreshCw className="h-4 w-4 mr-1" />
-                      Resend
+                      Renew Link
                     </Button>
                     <Button
                       variant="ghost"

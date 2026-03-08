@@ -1,36 +1,10 @@
 import { randomUUID } from "crypto";
-import { headers } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { addDays } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { logAudit } from "@/lib/audit";
-
-async function sendInvitationEmail(email: string, token: string) {
-  const adminClient = createAdminClient();
-  if (!adminClient) {
-    return false;
-  }
-
-  const headersList = await headers();
-  const host = headersList.get("host") ?? "localhost:3000";
-  const protocol = host.startsWith("localhost") ? "http" : "https";
-  const origin = `${protocol}://${host}`;
-  const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(`/register?token=${token}`)}`;
-
-  const { error } = await adminClient.auth.admin.inviteUserByEmail(email, {
-    redirectTo,
-    data: { invitation_token: token },
-  });
-
-  if (error) {
-    console.error("[invite-resend] Supabase invite email failed:", error.message);
-    return false;
-  }
-
-  return true;
-}
+import { getInvitationUrls } from "@/lib/invitations";
 
 export async function POST(
   _request: NextRequest,
@@ -65,7 +39,8 @@ export async function POST(
     include: { inviter: { select: { fullName: true } } },
   });
 
-  const emailSent = await sendInvitationEmail(refreshed.email, refreshed.token);
+  const urls = await getInvitationUrls(refreshed.email, refreshed.token);
+  const emailSent = false;
 
   await logAudit({
     userId: admin.id,
@@ -81,7 +56,43 @@ export async function POST(
     },
   });
 
-  return NextResponse.json({ ...refreshed, emailSent });
+  return NextResponse.json({
+    ...refreshed,
+    emailSent,
+    inviteUrl: urls.actionUrl,
+    deliveryMode: urls.usedGeneratedLink ? "manual_action_link" : "manual_register_link",
+  });
+}
+
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const admin = await requirePermission("send_invites");
+  if (!admin) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { id } = await params;
+  const invitation = await prisma.invitation.findUnique({ where: { id } });
+
+  if (!invitation) {
+    return NextResponse.json({ error: "Invitation not found" }, { status: 404 });
+  }
+
+  if (invitation.acceptedAt) {
+    return NextResponse.json(
+      { error: "Accepted invitations no longer have an invite link." },
+      { status: 400 }
+    );
+  }
+
+  const urls = await getInvitationUrls(invitation.email, invitation.token);
+
+  return NextResponse.json({
+    inviteUrl: urls.actionUrl,
+    deliveryMode: urls.usedGeneratedLink ? "manual_action_link" : "manual_register_link",
+  });
 }
 
 export async function DELETE(

@@ -21,6 +21,10 @@ export default defineConfig({
       name: "mobile-chrome",
       use: { ...devices["Pixel 5"] },
     },
+    {
+      name: "iphone-safari",
+      use: { ...devices["iPhone 13"] },
+    },
   ],
   webServer: process.env.E2E_BASE_URL
     ? undefined
