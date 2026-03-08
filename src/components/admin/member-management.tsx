@@ -76,34 +76,49 @@ export function MemberManagement({
     <div className="space-y-2 mt-4">
       {users.map((user) => (
         <Card key={user.id}>
-          <CardContent className="flex items-center justify-between py-3">
-            <div>
-              <div className="font-medium">
-                {user.fullName}
-                {user.hasBlackBoatEligibility && (
-                  <Badge className="ml-2" variant="default">
-                    Black Eligible
+          <CardContent className="py-3">
+            {/* Header: name + badges */}
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="font-medium flex items-center flex-wrap gap-1">
+                  <span className="truncate">{user.fullName}</span>
+                  {user.hasBlackBoatEligibility && (
+                    <Badge variant="default">Black Eligible</Badge>
+                  )}
+                </div>
+                <div className="text-xs text-muted-foreground truncate mt-0.5">
+                  {user.email}
+                </div>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  <Badge variant="outline" className="text-[10px]">
+                    {user.role}
                   </Badge>
-                )}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {user.email} —{" "}
-                <Badge variant="outline" className="text-[10px]">
-                  {user.role}
-                </Badge>{" "}
-                <Badge variant="secondary" className="text-[10px]">
-                  {user.memberType.replace("_", " ")}
-                </Badge>
-                {user.squads.map((s) => (
-                  <Badge key={s.id} variant="outline" className="ml-1 text-[10px]">
-                    {s.name}
+                  <Badge variant="secondary" className="text-[10px]">
+                    {user.memberType.replace("_", " ")}
                   </Badge>
-                ))}
+                  {user.squads.map((s) => (
+                    <Badge key={s.id} variant="outline" className="text-[10px]">
+                      {s.name}
+                    </Badge>
+                  ))}
+                </div>
               </div>
+              {/* Desktop-only delete */}
+              <Button
+                variant="destructive"
+                size="sm"
+                className="hidden sm:flex flex-shrink-0"
+                onClick={() => deleteUser(user.id, user.fullName)}
+              >
+                <Trash2 className="h-3 w-3 mr-1" />
+                Delete
+              </Button>
             </div>
-            <div className="flex items-center gap-2">
+
+            {/* Controls row */}
+            <div className="flex flex-wrap items-center gap-2 mt-2 pt-2 border-t">
               <select
-                className="text-xs border rounded px-2 py-1"
+                className="text-xs border rounded px-2 py-1.5 flex-1 min-w-[120px] sm:flex-none"
                 value={user.memberType}
                 onChange={(e) =>
                   updateUser(user.id, { memberType: e.target.value })
@@ -114,7 +129,7 @@ export function MemberManagement({
                 <option value="recreational">Recreational</option>
               </select>
               <select
-                className="text-xs border rounded px-2 py-1"
+                className="text-xs border rounded px-2 py-1.5 flex-1 min-w-[100px] sm:flex-none"
                 value={user.role}
                 onChange={(e) =>
                   updateUser(user.id, { role: e.target.value })
@@ -129,6 +144,7 @@ export function MemberManagement({
               <Button
                 variant={user.hasBlackBoatEligibility ? "destructive" : "default"}
                 size="sm"
+                className="text-xs"
                 onClick={() =>
                   updateUser(user.id, {
                     hasBlackBoatEligibility: !user.hasBlackBoatEligibility,
@@ -139,9 +155,11 @@ export function MemberManagement({
                   ? "Revoke Black"
                   : "Grant Black"}
               </Button>
+              {/* Mobile-only delete */}
               <Button
                 variant="destructive"
                 size="sm"
+                className="sm:hidden text-xs"
                 onClick={() => deleteUser(user.id, user.fullName)}
               >
                 <Trash2 className="h-3 w-3 mr-1" />
