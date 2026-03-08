@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { getAuthenticatedUser } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { createClient } from "@/lib/supabase/server";
 import { AppNav } from "@/components/app-nav";
 
 export default async function AppLayout({
@@ -7,10 +8,21 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const user = await getAuthenticatedUser();
+  const supabase = await createClient();
+  const {
+    data: { user: authUser },
+  } = await supabase.auth.getUser();
+
+  if (!authUser?.email) {
+    redirect("/login");
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { email: authUser.email },
+  });
 
   if (!user) {
-    redirect("/login");
+    redirect("/pending-approval");
   }
 
   return (
