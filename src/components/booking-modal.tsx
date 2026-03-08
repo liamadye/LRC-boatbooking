@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Dialog,
@@ -24,50 +24,44 @@ type BookingTarget = {
   slot: number;
 };
 
+type EditingBooking = {
+  id: string;
+  bookerName: string;
+  crewCount: number;
+  startSlot: number;
+  endSlot: number;
+  isRaceSpecific: boolean;
+  raceDetails?: string | null;
+  notes?: string | null;
+};
+
 export function BookingModal({
   target,
   selectedDate,
   user,
   boats,
-  squads = [],
+  editingBooking,
   onClose,
 }: {
   target: BookingTarget;
   selectedDate: string;
   user: UserProfile;
   boats: BoatWithRelations[];
-  squads?: { id: string; name: string }[];
+  editingBooking?: EditingBooking;
   onClose: () => void;
 }) {
   const router = useRouter();
   const { toast } = useToast();
 
+  const isEditing = !!editingBooking;
   const boat = boats.find((b) => b.id === target.resourceId);
+  const maxCrew = boat ? (MAX_CREW[boat.boatType] ?? 1) : 1;
 
-  // Determine if this is a "big boat" (4+ crew capacity)
-  const isBigBoat = useMemo(() => {
-    if (!boat) return false;
-    const maxCrew = MAX_CREW[boat.boatType] ?? 1;
-    return maxCrew >= 4;
-  }, [boat]);
-
-  // Default booker name: for big boats, use user's first squad name; otherwise personal name
-  const defaultName = useMemo(() => {
-    if (isBigBoat && user.squads.length > 0) {
-      return user.squads[0].name;
-    }
-    return user.fullName;
-  }, [isBigBoat, user]);
-
-  const [bookerName, setBookerName] = useState(defaultName);
-  const [nameMode, setNameMode] = useState<"squad" | "custom">(
-    isBigBoat && user.squads.length > 0 ? "squad" : "custom"
-  );
-  const crewCount = boat ? (MAX_CREW[boat.boatType] ?? 1) : 1;
-  const [endSlot, setEndSlot] = useState(target.slot);
-  const [isRaceSpecific, setIsRaceSpecific] = useState(false);
-  const [raceDetails, setRaceDetails] = useState("");
-  const [notes, setNotes] = useState("");
+  const [bookerName, setBookerName] = useState(editingBooking?.bookerName ?? user.fullName);
+  const [endSlot, setEndSlot] = useState(editingBooking?.endSlot ?? target.slot);
+  const [isRaceSpecific, setIsRaceSpecific] = useState(editingBooking?.isRaceSpecific ?? false);
+  const [raceDetails, setRaceDetails] = useState(editingBooking?.raceDetails ?? "");
+  const [notes, setNotes] = useState(editingBooking?.notes ?? "");
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
 
@@ -77,22 +71,38 @@ export function BookingModal({
     setErrors([]);
 
     try {
-      const res = await fetch("/api/bookings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          date: selectedDate,
-          resourceType: target.resourceType,
-          resourceId: target.resourceId,
-          bookerName,
-          crewCount,
-          startSlot: target.slot,
-          endSlot,
-          isRaceSpecific,
-          raceDetails: isRaceSpecific ? raceDetails : null,
-          notes: notes || null,
-        }),
-      });
+      let res: Response;
+
+      if (isEditing) {
+        res = await fetch(`/api/bookings/${editingBooking.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bookerName,
+            endSlot,
+            isRaceSpecific,
+            raceDetails: isRaceSpecific ? raceDetails : null,
+            notes: notes || null,
+          }),
+        });
+      } else {
+        res = await fetch("/api/bookings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            date: selectedDate,
+            resourceType: target.resourceType,
+            resourceId: target.resourceId,
+            bookerName,
+            crewCount: maxCrew,
+            startSlot: target.slot,
+            endSlot,
+            isRaceSpecific,
+            raceDetails: isRaceSpecific ? raceDetails : null,
+            notes: notes || null,
+          }),
+        });
+      }
 
       const data = await res.json();
 
@@ -100,12 +110,15 @@ export function BookingModal({
         if (data.errors) {
           setErrors(data.errors.map((e: { message: string }) => e.message));
         } else {
-          setErrors([data.error ?? "Failed to create booking"]);
+          setErrors([data.error ?? `Failed to ${isEditing ? "update" : "create"} booking`]);
         }
         return;
       }
 
-      toast({ title: "Booking created", description: `${target.resourceName} booked successfully.` });
+      toast({
+        title: isEditing ? "Booking updated" : "Booking created",
+        description: `${target.resourceName} ${isEditing ? "updated" : "booked"} successfully.`,
+      });
       onClose();
       router.refresh();
     } catch {
@@ -119,9 +132,9 @@ export function BookingModal({
 
   return (
     <Dialog open onOpenChange={() => onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md w-[calc(100%-2rem)] mx-auto">
         <DialogHeader>
-          <DialogTitle>Book {target.resourceName}</DialogTitle>
+          <DialogTitle>{isEditing ? "Edit" : "Book"} {target.resourceName}</DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -140,70 +153,19 @@ export function BookingModal({
             )}
           </div>
 
-          {/* Booker name: crew dropdown for big boats, text input for others */}
-          {isBigBoat ? (
-            <div className="space-y-2">
-              <Label>Booking for</Label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setNameMode("squad"); if (user.squads.length > 0) setBookerName(user.squads[0].name); }}
-                  className={`px-3 py-1 rounded text-sm border ${nameMode === "squad" ? "bg-blue-100 border-blue-300" : "bg-gray-50 border-gray-200"}`}
-                >
-                  Crew
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setNameMode("custom"); setBookerName(user.fullName); }}
-                  className={`px-3 py-1 rounded text-sm border ${nameMode === "custom" ? "bg-blue-100 border-blue-300" : "bg-gray-50 border-gray-200"}`}
-                >
-                  Individual
-                </button>
-              </div>
-              {nameMode === "squad" ? (
-                <select
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={bookerName}
-                  onChange={(e) => setBookerName(e.target.value)}
-                >
-                  {/* User's own squads first */}
-                  {user.squads.map((s) => (
-                    <option key={s.id} value={s.name}>
-                      {s.name} (your crew)
-                    </option>
-                  ))}
-                  {/* Then all other squads */}
-                  {squads
-                    .filter((s) => !user.squads.some((us) => us.id === s.id))
-                    .map((s) => (
-                      <option key={s.id} value={s.name}>
-                        {s.name}
-                      </option>
-                    ))}
-                </select>
-              ) : (
-                <Input
-                  value={bookerName}
-                  onChange={(e) => setBookerName(e.target.value)}
-                  required
-                />
-              )}
-            </div>
-          ) : (
-            <div>
-              <Label htmlFor="bookerName">Name</Label>
-              <Input
-                id="bookerName"
-                value={bookerName}
-                onChange={(e) => setBookerName(e.target.value)}
-                required
-              />
-            </div>
-          )}
+          <div>
+            <Label htmlFor="bookerName">Name</Label>
+            <Input
+              id="bookerName"
+              value={bookerName}
+              onChange={(e) => setBookerName(e.target.value)}
+              required
+            />
+          </div>
 
-          {boat && (
+          {target.resourceType === "boat" && boat && (
             <div className="text-sm text-muted-foreground">
-              Crew size: {crewCount}
+              Crew: {maxCrew}{maxCrew > 1 && boat.boatType.includes("+") ? ` (${maxCrew - 1} + cox)` : ""}
             </div>
           )}
 
@@ -214,6 +176,7 @@ export function BookingModal({
               className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
               value={endSlot}
               onChange={(e) => setEndSlot(parseInt(e.target.value))}
+              disabled={isEditing}
             >
               {TIME_SLOTS.filter((ts) => ts.slot >= target.slot).map((ts) => (
                 <option key={ts.slot} value={ts.slot}>
@@ -279,7 +242,9 @@ export function BookingModal({
               Cancel
             </Button>
             <Button type="submit" disabled={loading}>
-              {loading ? "Booking..." : "Confirm Booking"}
+              {loading
+                ? isEditing ? "Saving..." : "Booking..."
+                : isEditing ? "Save Changes" : "Confirm Booking"}
             </Button>
           </div>
         </form>

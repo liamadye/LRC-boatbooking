@@ -1,25 +1,17 @@
 import { prisma } from "@/lib/prisma";
-import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { AdminTabs } from "@/components/admin/admin-tabs";
+import { getAuthenticatedUser } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 
 export default async function AdminPage() {
-  const supabase = await createClient();
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
+  const user = await getAuthenticatedUser();
 
-  const user = await prisma.user.findUnique({
-    where: { email: authUser!.email! },
-  });
-
-  // Only admins, captains, and vice-captains can access
-  const adminRoles = ["admin", "captain", "vice_captain"];
-  if (!user || !adminRoles.includes(user.role)) {
+  if (!user || !can(user.role, "view_admin")) {
     redirect("/bookings");
   }
 
-  const [boats, squads, users, applications] = await Promise.all([
+  const [boats, squads, users, applications, invitations] = await Promise.all([
     prisma.boat.findMany({
       include: { responsibleSquad: true },
       orderBy: { displayOrder: "asc" },
@@ -33,6 +25,11 @@ export default async function AdminPage() {
       where: { status: "pending" },
       include: { applicant: true },
       orderBy: { createdAt: "desc" },
+    }),
+    prisma.invitation.findMany({
+      include: { inviter: { select: { fullName: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 100,
     }),
   ]);
 
@@ -61,6 +58,7 @@ export default async function AdminPage() {
             email: a.applicant.email,
           },
         }))}
+        invitations={JSON.parse(JSON.stringify(invitations))}
       />
     </div>
   );

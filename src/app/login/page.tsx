@@ -5,26 +5,38 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [resetSent, setResetSent] = useState(false);
 
   const supabase = createClient();
+
+  // Handle implicit flow: Supabase recovery links put token in URL hash
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash && hash.includes("access_token")) {
+      // Supabase client auto-picks up the hash token
+      supabase.auth.getSession().then(({ data }) => {
+        if (data.session) {
+          const params = new URLSearchParams(hash.substring(1));
+          const type = params.get("type");
+          window.location.href = type === "recovery" ? "/reset-password/update" : "/bookings";
+        }
+      });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleEmailLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
-    const { error } =
-      mode === "login"
-        ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
       setError(error.message);
@@ -126,47 +138,44 @@ export default function LoginPage() {
             )}
 
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading
-                ? "Loading..."
-                : mode === "login"
-                  ? "Sign In"
-                  : "Create Account"}
+              {loading ? "Signing in..." : "Sign In"}
             </Button>
           </form>
 
-          {mode === "login" && (
-            <p className="text-center">
-              <a
-                href="/reset-password"
-                className="text-sm underline text-muted-foreground hover:text-foreground"
-              >
-                Forgot your password?
-              </a>
-            </p>
-          )}
-
-          <p className="text-center text-sm text-muted-foreground">
-            {mode === "login" ? (
-              <>
-                Don&apos;t have an account?{" "}
-                <button
-                  className="underline text-foreground"
-                  onClick={() => setMode("signup")}
-                >
-                  Sign up
-                </button>
-              </>
-            ) : (
-              <>
-                Already have an account?{" "}
-                <button
-                  className="underline text-foreground"
-                  onClick={() => setMode("login")}
-                >
-                  Sign in
-                </button>
-              </>
+          <div className="text-center">
+            <button
+              type="button"
+              className="text-xs text-blue-600 hover:underline"
+              onClick={async () => {
+                const target = email;
+                if (!target) {
+                  setError("Enter your email address first");
+                  return;
+                }
+                setLoading(true);
+                setError(null);
+                const { error: resetError } = await supabase.auth.resetPasswordForEmail(target, {
+                  redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
+                });
+                setLoading(false);
+                if (resetError) {
+                  setError(resetError.message);
+                } else {
+                  setResetSent(true);
+                }
+              }}
+            >
+              Forgot password?
+            </button>
+            {resetSent && (
+              <p className="text-xs text-green-600 mt-1">
+                Password reset email sent. Check your inbox.
+              </p>
             )}
+          </div>
+
+          <p className="text-center text-xs text-muted-foreground">
+            Need an account? Contact a club administrator for an invitation.
           </p>
         </CardContent>
       </Card>

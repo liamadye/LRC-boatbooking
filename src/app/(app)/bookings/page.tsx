@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { createClient } from "@/lib/supabase/server";
-import { BookingsClient } from "@/components/bookings-client";
+import { redirect } from "next/navigation";
+import { getAuthenticatedUser } from "@/lib/auth";
+import { BookingGrid } from "@/components/booking-grid";
+import { WeekNav } from "@/components/week-nav";
 import { startOfWeek, addDays, format, parseISO } from "date-fns";
 
 export default async function BookingsPage({
@@ -9,10 +11,6 @@ export default async function BookingsPage({
   searchParams: Promise<{ date?: string }>;
 }) {
   const params = await searchParams;
-  const supabase = await createClient();
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
 
   // Determine which date to show
   const selectedDate = params.date
@@ -23,49 +21,35 @@ export default async function BookingsPage({
   const weekStart = startOfWeek(selectedDate, { weekStartsOn: 1 });
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
-  // Fetch all resources
-  const [boats, equipment, oarSets, squads] = await Promise.all([
-    prisma.boat.findMany({
-      include: { responsibleSquad: true },
-      orderBy: { displayOrder: "asc" },
-    }),
-    prisma.equipment.findMany({
-      orderBy: [{ type: "asc" }, { number: "asc" }],
-    }),
-    prisma.oarSet.findMany({ orderBy: { name: "asc" } }),
-    prisma.squad.findMany({ orderBy: { name: "asc" } }),
-  ]);
-
-  // Fetch bookings for the whole week
-  const bookings = await prisma.booking.findMany({
-    where: {
-      date: {
-        gte: weekStart,
-        lte: addDays(weekStart, 6),
-      },
-    },
-  });
-
-  // Get or create user profile
-  let userProfile = await prisma.user.findUnique({
-    where: { email: authUser!.email! },
-    include: { squads: { include: { squad: true } } },
-  });
+  // Fetch everything in parallel — all 6 queries are independent
+  const [boats, equipment, oarSets, bookings, userProfile, bookingWeek] =
+    await Promise.all([
+      prisma.boat.findMany({
+        include: { responsibleSquad: true },
+        orderBy: { displayOrder: "asc" },
+      }),
+      prisma.equipment.findMany({
+        orderBy: [{ type: "asc" }, { number: "asc" }],
+      }),
+      prisma.oarSet.findMany({ orderBy: { name: "asc" } }),
+      prisma.booking.findMany({
+        where: {
+          date: { gte: weekStart, lte: addDays(weekStart, 6) },
+        },
+      }),
+      getAuthenticatedUser().then(async (user) => {
+        if (!user) return null;
+        return prisma.user.findUnique({
+          where: { id: user.id },
+          include: { squads: { include: { squad: true } } },
+        });
+      }),
+      prisma.bookingWeek.findUnique({ where: { weekStart } }),
+    ]);
 
   if (!userProfile) {
-    userProfile = await prisma.user.create({
-      data: {
-        email: authUser!.email!,
-        fullName: authUser!.user_metadata?.full_name ?? authUser!.email!.split("@")[0],
-      },
-      include: { squads: { include: { squad: true } } },
-    });
+    redirect("/pending-approval");
   }
-
-  // Get the booking week config (if any)
-  const bookingWeek = await prisma.bookingWeek.findUnique({
-    where: { weekStart },
-  });
 
   // Serialize data for client components
   const serializedBoats = boats.map((b) => ({
@@ -92,20 +76,30 @@ export default async function BookingsPage({
     date: format(b.date, "yyyy-MM-dd"),
   }));
 
-  const allSquads = squads.map((s) => ({ id: s.id, name: s.name }));
-
   return (
-    <BookingsClient
-      boats={serializedBoats}
-      equipment={equipment}
-      oarSets={oarSets}
-      bookings={serializedBookings}
-      initialDate={format(selectedDate, "yyyy-MM-dd")}
-      weekStart={weekStart}
-      weekDays={weekDays}
-      user={serializedUser}
-      squads={allSquads}
-      pymbleNotes={bookingWeek?.pymbleNotes}
-    />
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <h1 className="text-lg sm:text-xl font-bold">
+          Bookings — W/C {format(weekStart, "d MMM yyyy")}
+        </h1>
+        {bookingWeek?.pymbleNotes && (
+          <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-1.5 text-sm text-amber-800">
+            {bookingWeek.pymbleNotes}
+          </div>
+        )}
+      </div>
+
+      <WeekNav weekDays={weekDays} selectedDate={selectedDate} />
+
+      <BookingGrid
+        boats={serializedBoats}
+        equipment={equipment}
+        oarSets={oarSets}
+        bookings={serializedBookings}
+        selectedDate={format(selectedDate, "yyyy-MM-dd")}
+        user={serializedUser}
+        loadedAt={new Date().toISOString()}
+      />
+    </div>
   );
 }

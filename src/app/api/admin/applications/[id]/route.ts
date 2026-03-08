@@ -1,36 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createClient } from "@/lib/supabase/server";
-
-async function requireAdmin() {
-  const supabase = await createClient();
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
-
-  if (!authUser) return null;
-
-  const user = await prisma.user.findUnique({
-    where: { email: authUser.email! },
-  });
-
-  const adminRoles = ["admin", "captain", "vice_captain"];
-  if (!user || !adminRoles.includes(user.role)) return null;
-
-  return user;
-}
+import { requirePermission } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const admin = await requireAdmin();
+  const admin = await requirePermission("review_applications");
   if (!admin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { id } = await params;
   const body = await request.json();
+
+  const before = await prisma.blackBoatApplication.findUnique({ where: { id } });
 
   const application = await prisma.blackBoatApplication.update({
     where: { id },
@@ -49,6 +34,15 @@ export async function PATCH(
       data: { hasBlackBoatEligibility: true },
     });
   }
+
+  await logAudit({
+    userId: admin.id,
+    action: "application.review",
+    targetType: "application",
+    targetId: id,
+    before: { status: before?.status },
+    after: { status: application.status },
+  });
 
   return NextResponse.json(application);
 }

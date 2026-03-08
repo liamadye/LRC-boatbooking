@@ -1,8 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { format, addDays, startOfWeek } from "date-fns";
-import { useRouter } from "next/navigation";
+import { format, parseISO } from "date-fns";
 import { WeekNav } from "@/components/week-nav";
 import { BookingGrid } from "@/components/booking-grid";
 import type { BoatWithRelations, EquipmentItem, OarSetItem, UserProfile } from "@/lib/types";
@@ -32,7 +30,6 @@ export function BookingsClient({
   weekStart,
   weekDays,
   user,
-  squads,
   pymbleNotes,
 }: {
   boats: BoatWithRelations[];
@@ -43,30 +40,9 @@ export function BookingsClient({
   weekStart: Date;
   weekDays: Date[];
   user: UserProfile;
-  squads: { id: string; name: string }[];
   pymbleNotes?: string | null;
 }) {
-  const [selectedDate, setSelectedDate] = useState(initialDate);
-  const router = useRouter();
-
-  const handleDayChange = useCallback((date: Date) => {
-    const formatted = format(date, "yyyy-MM-dd");
-    // If same week, just update client state (no server round-trip)
-    const dayWeekStart = startOfWeek(date, { weekStartsOn: 1 });
-    if (dayWeekStart.getTime() === weekStart.getTime()) {
-      setSelectedDate(formatted);
-      // Update URL without triggering navigation
-      window.history.replaceState(null, "", `/bookings?date=${formatted}`);
-    } else {
-      // Different week: need server data
-      router.push(`/bookings?date=${formatted}`);
-    }
-  }, [weekStart, router]);
-
-  const handleWeekChange = useCallback((offset: number) => {
-    const newWeekStart = addDays(weekStart, offset);
-    router.push(`/bookings?date=${format(newWeekStart, "yyyy-MM-dd")}`);
-  }, [weekStart, router]);
+  const selectedDateObj = parseISO(initialDate);
 
   return (
     <div className="space-y-4">
@@ -83,9 +59,7 @@ export function BookingsClient({
 
       <WeekNav
         weekDays={weekDays}
-        selectedDate={selectedDate}
-        onDayChange={handleDayChange}
-        onWeekChange={handleWeekChange}
+        selectedDate={selectedDateObj}
       />
 
       <BookingGrid
@@ -93,9 +67,8 @@ export function BookingsClient({
         equipment={equipment}
         oarSets={oarSets}
         bookings={bookings}
-        selectedDate={selectedDate}
+        selectedDate={initialDate}
         user={user}
-        squads={squads}
       />
     </div>
   );

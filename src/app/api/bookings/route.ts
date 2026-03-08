@@ -3,9 +3,21 @@ import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { validateBooking } from "@/lib/validation";
 import { isWeekend } from "@/lib/validation";
-import { addDays, subDays, parseISO } from "date-fns";
+import { addDays, subDays, parseISO, startOfWeek, format } from "date-fns";
+import { createRateLimiter } from "@/lib/rate-limit";
+
+const bookingLimiter = createRateLimiter({ windowMs: 60_000, maxRequests: 20 });
 
 export async function GET(request: NextRequest) {
+  const supabase = await createClient();
+  const {
+    data: { user: authUser },
+  } = await supabase.auth.getUser();
+
+  if (!authUser) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const date = searchParams.get("date");
   const weekStart = searchParams.get("weekStart");
@@ -28,6 +40,15 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0] ?? "unknown";
+  const { allowed, retryAfter } = bookingLimiter.check(ip);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(retryAfter) } }
+    );
+  }
+
   const supabase = await createClient();
   const {
     data: { user: authUser },
@@ -58,6 +79,31 @@ export async function POST(request: NextRequest) {
 
   if (!user) {
     return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+  }
+
+  // Check booking window (if configured for this week)
+  const bookingDate = parseISO(date);
+  const weekStart = startOfWeek(bookingDate, { weekStartsOn: 1 });
+  const bookingWeek = await prisma.bookingWeek.findUnique({
+    where: { weekStart },
+  });
+
+  if (bookingWeek) {
+    const now = new Date();
+    if (now < bookingWeek.opensAt) {
+      return NextResponse.json(
+        {
+          error: `Bookings for the week of ${format(weekStart, "d MMMM yyyy")} open on ${format(bookingWeek.opensAt, "EEEE d MMMM 'at' h:mma")}.`,
+        },
+        { status: 403 }
+      );
+    }
+    if (bookingWeek.closesAt && now > bookingWeek.closesAt) {
+      return NextResponse.json(
+        { error: `Bookings for the week of ${format(weekStart, "d MMMM yyyy")} have closed.` },
+        { status: 403 }
+      );
+    }
   }
 
   // Fetch resource details for validation
@@ -101,7 +147,6 @@ export async function POST(request: NextRequest) {
   }
 
   // Run validation
-  const bookingDate = parseISO(date);
   const validationErrors = validateBooking({
     boatType: boat?.boatType,
     boatClassification: boat?.classification as "black" | "green" | undefined,
@@ -127,32 +172,30 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ errors: validationErrors }, { status: 400 });
   }
 
-  // Check for conflicts (double booking)
-  for (let s = startSlot; s <= endSlot; s++) {
-    const conflictWhere: Record<string, unknown> = {
-      date: bookingDate,
-      startSlot: { lte: s },
-      endSlot: { gte: s },
-    };
+  // Check for conflicts (double booking) — single range overlap query
+  const conflictWhere: Record<string, unknown> = {
+    date: bookingDate,
+    startSlot: { lte: endSlot },
+    endSlot: { gte: startSlot },
+  };
 
-    if (resourceType === "boat") conflictWhere.boatId = resourceId;
-    else if (resourceType === "equipment") conflictWhere.equipmentId = resourceId;
-    else if (resourceType === "oar_set") conflictWhere.oarSetId = resourceId;
+  if (resourceType === "boat") conflictWhere.boatId = resourceId;
+  else if (resourceType === "equipment") conflictWhere.equipmentId = resourceId;
+  else if (resourceType === "oar_set") conflictWhere.oarSetId = resourceId;
 
-    const conflict = await prisma.booking.findFirst({ where: conflictWhere });
-    if (conflict) {
-      return NextResponse.json(
-        {
-          errors: [
-            {
-              field: "slot",
-              message: `Slot ${s} is already booked by ${conflict.bookerName}.`,
-            },
-          ],
-        },
-        { status: 409 }
-      );
-    }
+  const conflict = await prisma.booking.findFirst({ where: conflictWhere });
+  if (conflict) {
+    return NextResponse.json(
+      {
+        errors: [
+          {
+            field: "slot",
+            message: `This time slot overlaps with a booking by ${conflict.bookerName}.`,
+          },
+        ],
+      },
+      { status: 409 }
+    );
   }
 
   // Create booking

@@ -90,6 +90,8 @@ model User {
   bookings             Booking[]
   blackBoatApplications BlackBoatApplication[] @relation("Applicant")
   reviewedApplications  BlackBoatApplication[] @relation("Reviewer")
+  sentInvitations      Invitation[]           @relation("Inviter")
+  auditLogs            AuditLog[]
 
   @@map("users")
 }
@@ -198,6 +200,9 @@ model Booking {
   @@unique([date, boatId, startSlot])
   @@unique([date, equipmentId, startSlot])
   @@unique([date, oarSetId, startSlot])
+  @@index([date])
+  @@index([userId])
+  @@index([boatId, date])
   @@map("bookings")
 }
 
@@ -212,6 +217,25 @@ model BookingWeek {
   createdAt   DateTime  @default(now()) @map("created_at")
 
   @@map("booking_weeks")
+}
+
+// ─── Invitations ───────────────────────────────────────────────
+
+model Invitation {
+  id          String          @id @default(uuid())
+  email       String
+  token       String          @unique @default(uuid())
+  role        UserRole        @default(member)
+  memberType  MemberType      @default(recreational) @map("member_type")
+  invitedBy   String          @map("invited_by")
+  acceptedAt  DateTime?       @map("accepted_at")
+  expiresAt   DateTime        @map("expires_at")
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  inviter User @relation("Inviter", fields: [invitedBy], references: [id])
+
+  @@index([email, acceptedAt])
+  @@map("invitations")
 }
 
 // ─── Black Boat Applications ────────────────────────────────────
@@ -232,5 +256,26 @@ model BlackBoatApplication {
   applicant User  @relation("Applicant", fields: [userId], references: [id])
   reviewer  User? @relation("Reviewer", fields: [reviewedBy], references: [id])
 
+  @@index([userId, status])
   @@map("black_boat_applications")
+}
+
+// ─── Audit Log ─────────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  action     String
+  targetType String   @map("target_type")
+  targetId   String   @map("target_id")
+  before     Json?
+  after      Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([action])
+  @@index([targetType])
+  @@index([createdAt])
+  @@map("audit_logs")
 }

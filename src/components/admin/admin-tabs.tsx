@@ -1,12 +1,16 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BoatManagement } from "./boat-management";
-import { MemberManagement } from "./member-management";
-import { ApplicationReview } from "./application-review";
-import { InviteUser } from "./invite-user";
-import { BookingManagement } from "./booking-management";
 import type { BoatWithRelations } from "@/lib/types";
+
+const MemberManagement = dynamic(() => import("./member-management").then(m => ({ default: m.MemberManagement })));
+const BookingManagement = dynamic(() => import("./booking-management").then(m => ({ default: m.BookingManagement })));
+const InviteManagement = dynamic(() => import("./invite-management").then(m => ({ default: m.InviteManagement })));
+const ApplicationReview = dynamic(() => import("./application-review").then(m => ({ default: m.ApplicationReview })));
+const AuditLogViewer = dynamic(() => import("./audit-log-viewer").then(m => ({ default: m.AuditLogViewer })));
+const SquadManagement = dynamic(() => import("./squad-management").then(m => ({ default: m.SquadManagement })));
 
 type AdminUser = {
   id: string;
@@ -35,25 +39,45 @@ type Squad = {
   name: string;
 };
 
+type Invitation = {
+  id: string;
+  email: string;
+  token: string;
+  role: string;
+  memberType: string;
+  acceptedAt: string | null;
+  expiresAt: string;
+  createdAt: string;
+  inviter: { fullName: string };
+};
+
 export function AdminTabs({
   boats,
   squads,
   users,
   applications,
+  invitations,
 }: {
   boats: BoatWithRelations[];
   squads: Squad[];
   users: AdminUser[];
   applications: Application[];
+  invitations: Invitation[];
 }) {
   return (
     <Tabs defaultValue="boats">
-      <TabsList>
+      <TabsList className="w-full overflow-x-auto flex-wrap sm:flex-nowrap h-auto gap-1">
         <TabsTrigger value="boats">
           Boats ({boats.length})
         </TabsTrigger>
         <TabsTrigger value="members">
           Members ({users.length})
+        </TabsTrigger>
+        <TabsTrigger value="bookings">
+          All Bookings
+        </TabsTrigger>
+        <TabsTrigger value="invitations">
+          Invitations
         </TabsTrigger>
         <TabsTrigger value="applications">
           Applications
@@ -63,11 +87,11 @@ export function AdminTabs({
             </span>
           )}
         </TabsTrigger>
-        <TabsTrigger value="bookings">
-          Manage Bookings
+        <TabsTrigger value="squads">
+          Squads
         </TabsTrigger>
-        <TabsTrigger value="invite">
-          Invite User
+        <TabsTrigger value="audit-log">
+          Audit Log
         </TabsTrigger>
       </TabsList>
 
@@ -79,16 +103,24 @@ export function AdminTabs({
         <MemberManagement users={users} squads={squads} />
       </TabsContent>
 
-      <TabsContent value="applications">
-        <ApplicationReview applications={applications} />
-      </TabsContent>
-
       <TabsContent value="bookings">
         <BookingManagement />
       </TabsContent>
 
-      <TabsContent value="invite">
-        <InviteUser squads={squads} />
+      <TabsContent value="invitations">
+        <InviteManagement invitations={invitations} />
+      </TabsContent>
+
+      <TabsContent value="applications">
+        <ApplicationReview applications={applications} />
+      </TabsContent>
+
+      <TabsContent value="squads">
+        <SquadManagement users={users} />
+      </TabsContent>
+
+      <TabsContent value="audit-log">
+        <AuditLogViewer />
       </TabsContent>
     </Tabs>
   );

@@ -1,13 +1,22 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
 import { TIME_SLOTS, BOAT_SECTIONS, SECTION_COLORS } from "@/lib/constants";
-import { BookingModal } from "@/components/booking-modal";
+import { MobileBookingView } from "@/components/mobile-booking-view";
 import { TotalsBar } from "@/components/totals-bar";
-import { FilterBar, type Filters } from "@/components/filter-bar";
-import { ChevronDown, ChevronRight, Circle, Lock, Ban } from "lucide-react";
+import { ChevronDown, ChevronRight, Circle, Lock, Ban, RefreshCw } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
 import type { BoatWithRelations, EquipmentItem, OarSetItem, UserProfile } from "@/lib/types";
+
+const BookingModal = dynamic(() =>
+  import("@/components/booking-modal").then((m) => ({ default: m.BookingModal }))
+);
+const BookingDetailPopover = dynamic(() =>
+  import("@/components/booking-detail-popover").then((m) => ({ default: m.BookingDetailPopover }))
+);
 
 type SerializedBooking = {
   id: string;
@@ -22,6 +31,7 @@ type SerializedBooking = {
   startSlot: number;
   endSlot: number;
   isRaceSpecific: boolean;
+  raceDetails?: string | null;
   notes: string | null;
 };
 
@@ -32,7 +42,7 @@ type Props = {
   bookings: SerializedBooking[];
   selectedDate: string;
   user: UserProfile;
-  squads?: { id: string; name: string }[];
+  loadedAt?: string;
 };
 
 type BookingTarget = {
@@ -49,15 +59,55 @@ export function BookingGrid({
   bookings,
   selectedDate,
   user,
-  squads = [],
+  loadedAt,
 }: Props) {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [bookingTarget, setBookingTarget] = useState<BookingTarget | null>(null);
-  const [filters, setFilters] = useState<Filters>({
-    search: "",
-    classification: "all",
-    status: "all",
-  });
+  const [selectedBooking, setSelectedBooking] = useState<SerializedBooking | null>(null);
+  const [editingBooking, setEditingBooking] = useState<SerializedBooking | null>(null);
+
+  // Lookup maps for O(1) access
+  const boatMap = useMemo(() => {
+    const m = new Map<string, BoatWithRelations>();
+    boats.forEach((b) => m.set(b.id, b));
+    return m;
+  }, [boats]);
+
+  const equipMap = useMemo(() => {
+    const m = new Map<string, EquipmentItem>();
+    equipment.forEach((e) => m.set(e.id, e));
+    return m;
+  }, [equipment]);
+
+  const oarMap = useMemo(() => {
+    const m = new Map<string, OarSetItem>();
+    oarSets.forEach((o) => m.set(o.id, o));
+    return m;
+  }, [oarSets]);
+
+  // Memoize resource groupings
+  const clubBoats = useMemo(() => boats.filter((b) => b.category === "club"), [boats]);
+  const privateBoats = useMemo(() => boats.filter((b) => b.category === "private"), [boats]);
+  const tinnies = useMemo(() => boats.filter((b) => b.category === "tinny"), [boats]);
+  const ergs = useMemo(() => equipment.filter((e) => e.type === "erg"), [equipment]);
+  const bikes = useMemo(() => equipment.filter((e) => e.type === "bike"), [equipment]);
+  const gyms = useMemo(() => equipment.filter((e) => e.type === "gym"), [equipment]);
+
+  function handleEdit(booking: SerializedBooking) {
+    const resourceId = booking.boatId ?? booking.equipmentId ?? booking.oarSetId ?? "";
+    const boat = boatMap.get(booking.boatId ?? "");
+    const equip = equipMap.get(booking.equipmentId ?? "");
+    const oar = oarMap.get(booking.oarSetId ?? "");
+    const resourceName = boat?.name ?? (equip ? `${equip.type.charAt(0).toUpperCase() + equip.type.slice(1)} ${equip.number}` : oar?.name ?? "Unknown");
+
+    setBookingTarget({
+      resourceType: booking.resourceType as "boat" | "equipment" | "oar_set",
+      resourceId,
+      resourceName,
+      slot: booking.startSlot,
+    });
+    setEditingBooking(booking);
+  }
 
   // Filter bookings for the selected date
   const dayBookings = useMemo(
@@ -77,25 +127,6 @@ export function BookingGrid({
     }
     return idx;
   }, [dayBookings]);
-
-  // Apply filters to boats
-  const filteredBoats = useMemo(() => {
-    return boats.filter((b) => {
-      if (filters.search) {
-        const q = filters.search.toLowerCase();
-        if (!b.name.toLowerCase().includes(q) && !b.boatType.toLowerCase().includes(q)) {
-          return false;
-        }
-      }
-      if (filters.classification !== "all" && b.classification !== filters.classification) {
-        return false;
-      }
-      if (filters.status !== "all" && b.status !== filters.status) {
-        return false;
-      }
-      return true;
-    });
-  }, [boats, filters]);
 
   function toggleSection(section: string) {
     setCollapsedSections((prev) => {
@@ -117,27 +148,14 @@ export function BookingGrid({
     slot: number
   ) {
     const existing = getBooking(resourceId, slot);
-    if (existing) return;
+    if (existing) {
+      setSelectedBooking(existing);
+      return;
+    }
     setBookingTarget({ resourceType, resourceId, resourceName, slot });
   }
 
-  // Count available (unbooked on this day) boats in a section
-  function countAvailable(sectionBoats: BoatWithRelations[]): number {
-    return sectionBoats.filter(
-      (b) => b.status === "available" && !bookingIndex[b.id]
-    ).length;
-  }
-
-  // Group boats using filtered set
-  const clubBoats = filteredBoats.filter((b) => b.category === "club");
-  const privateBoats = filteredBoats.filter((b) => b.category === "private");
-  const tinnies = filteredBoats.filter((b) => b.category === "tinny");
-
-  const ergs = equipment.filter((e) => e.type === "erg");
-  const bikes = equipment.filter((e) => e.type === "bike");
-  const gyms = equipment.filter((e) => e.type === "gym");
-
-  // Calculate totals (use ALL boats, not filtered)
+  // Calculate totals using boatMap for O(1) lookup
   const totals = useMemo(() => {
     const inShed: Record<number, number> = {};
     const rowing: Record<number, number> = {};
@@ -148,7 +166,7 @@ export function BookingGrid({
     for (const b of dayBookings) {
       for (let s = b.startSlot; s <= b.endSlot; s++) {
         if (b.resourceType === "boat") {
-          const boat = boats.find((bt) => bt.id === b.boatId);
+          const boat = boatMap.get(b.boatId ?? "");
           if (boat?.category === "tinny") {
             inShed[s] += b.crewCount;
           } else {
@@ -163,15 +181,32 @@ export function BookingGrid({
       }
     }
     return { inShed, rowing };
-  }, [dayBookings, boats]);
+  }, [dayBookings, boatMap]);
 
   return (
     <>
-      <FilterBar filters={filters} onChange={setFilters} />
-
+      {loadedAt && <RefreshIndicator loadedAt={loadedAt} />}
       <TotalsBar inShed={totals.inShed} rowing={totals.rowing} />
 
-      <div className="overflow-x-auto rounded-lg border bg-white">
+      {/* Mobile view */}
+      <MobileBookingView
+        boats={boats}
+        equipment={equipment}
+        oarSets={oarSets}
+        dayBookings={dayBookings}
+        selectedDate={selectedDate}
+        user={user}
+        boatMap={boatMap}
+        equipMap={equipMap}
+        oarMap={oarMap}
+        onBookingClick={(booking) => setSelectedBooking(booking)}
+        onSlotClick={(type, id, name, slot) =>
+          setBookingTarget({ resourceType: type, resourceId: id, resourceName: name, slot })
+        }
+      />
+
+      {/* Desktop view */}
+      <div className="overflow-x-auto rounded-lg border bg-white hidden md:block">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-gray-50">
@@ -199,14 +234,12 @@ export function BookingGrid({
               );
               if (sectionBoats.length === 0) return null;
               const isCollapsed = collapsedSections.has(section.label);
-              const available = countAvailable(sectionBoats);
 
               return (
                 <SectionGroup key={section.label}>
                   <SectionHeader
                     label={section.label}
                     count={sectionBoats.length}
-                    available={available}
                     isCollapsed={isCollapsed}
                     onToggle={() => toggleSection(section.label)}
                     colorClass={SECTION_COLORS.club}
@@ -219,6 +252,7 @@ export function BookingGrid({
                         getBooking={getBooking}
                         onCellClick={handleCellClick}
                         colorClass={section.color}
+                        currentUserId={user.id}
                       />
                     ))}
                 </SectionGroup>
@@ -244,6 +278,7 @@ export function BookingGrid({
                     colorClass={SECTION_COLORS.oars}
                     getBooking={getBooking}
                     onCellClick={handleCellClick}
+                    currentUserId={user.id}
                   />
                 ))}
             </SectionGroup>
@@ -265,6 +300,7 @@ export function BookingGrid({
                     getBooking={getBooking}
                     onCellClick={handleCellClick}
                     colorClass={SECTION_COLORS.private}
+                    currentUserId={user.id}
                   />
                 ))}
             </SectionGroup>
@@ -286,6 +322,7 @@ export function BookingGrid({
                     getBooking={getBooking}
                     onCellClick={handleCellClick}
                     colorClass={SECTION_COLORS.tinny}
+                    currentUserId={user.id}
                   />
                 ))}
             </SectionGroup>
@@ -311,6 +348,7 @@ export function BookingGrid({
                       colorClass={SECTION_COLORS.equipment}
                       getBooking={getBooking}
                       onCellClick={handleCellClick}
+                      currentUserId={user.id}
                     />
                   ))}
                   {bikes.map((e) => (
@@ -322,6 +360,7 @@ export function BookingGrid({
                       colorClass={SECTION_COLORS.equipment}
                       getBooking={getBooking}
                       onCellClick={handleCellClick}
+                      currentUserId={user.id}
                     />
                   ))}
                   {gyms.map((e) => (
@@ -333,6 +372,7 @@ export function BookingGrid({
                       colorClass={SECTION_COLORS.equipment}
                       getBooking={getBooking}
                       onCellClick={handleCellClick}
+                      currentUserId={user.id}
                     />
                   ))}
                 </>
@@ -348,15 +388,27 @@ export function BookingGrid({
           selectedDate={selectedDate}
           user={user}
           boats={boats}
-          squads={squads}
-          onClose={() => setBookingTarget(null)}
+          editingBooking={editingBooking ?? undefined}
+          onClose={() => { setBookingTarget(null); setEditingBooking(null); }}
+        />
+      )}
+
+      {selectedBooking && (
+        <BookingDetailPopover
+          booking={selectedBooking}
+          boats={boats}
+          equipment={equipment}
+          oarSets={oarSets}
+          user={user}
+          onClose={() => setSelectedBooking(null)}
+          onEdit={handleEdit}
         />
       )}
     </>
   );
 }
 
-// Sub-components
+// ─── Sub-components ─────────────────────────────────────────────
 
 function SectionGroup({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
@@ -365,14 +417,12 @@ function SectionGroup({ children }: { children: React.ReactNode }) {
 function SectionHeader({
   label,
   count,
-  available,
   isCollapsed,
   onToggle,
   colorClass,
 }: {
   label: string;
   count: number;
-  available?: number;
   isCollapsed: boolean;
   onToggle: () => void;
   colorClass: string;
@@ -391,7 +441,7 @@ function SectionHeader({
           )}
           {label}
           <span className="text-xs text-muted-foreground font-normal">
-            {count} boats{available !== undefined ? ` · ${available} free` : ""}
+            ({count})
           </span>
         </div>
       </td>
@@ -404,11 +454,13 @@ function BoatRow({
   getBooking,
   onCellClick,
   colorClass,
+  currentUserId,
 }: {
   boat: BoatWithRelations;
   getBooking: (id: string, slot: number) => SerializedBooking | undefined;
   onCellClick: (type: "boat", id: string, name: string, slot: number) => void;
   colorClass: string;
+  currentUserId: string;
 }) {
   const isNotInUse = boat.status === "not_in_use";
   const isBlack = boat.classification === "black";
@@ -443,6 +495,7 @@ function BoatRow({
             key={ts.slot}
             booking={booking}
             isNotInUse={isNotInUse}
+            currentUserId={currentUserId}
             onClick={() =>
               !isNotInUse && onCellClick("boat", boat.id, boat.name, ts.slot)
             }
@@ -461,6 +514,7 @@ function ResourceRow({
   colorClass,
   getBooking,
   onCellClick,
+  currentUserId,
 }: {
   id: string;
   name: string;
@@ -469,6 +523,7 @@ function ResourceRow({
   colorClass: string;
   getBooking: (id: string, slot: number) => SerializedBooking | undefined;
   onCellClick: (type: "equipment" | "oar_set", id: string, name: string, slot: number) => void;
+  currentUserId: string;
 }) {
   return (
     <tr className="border-t hover:bg-gray-50/50">
@@ -491,6 +546,7 @@ function ResourceRow({
           <BookingCell
             key={ts.slot}
             booking={booking}
+            currentUserId={currentUserId}
             onClick={() => onCellClick(resourceType, id, name, ts.slot)}
           />
         );
@@ -499,13 +555,50 @@ function ResourceRow({
   );
 }
 
+function RefreshIndicator({ loadedAt }: { loadedAt: string }) {
+  const router = useRouter();
+  const [label, setLabel] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+
+  const updateLabel = useCallback(() => {
+    setLabel(formatDistanceToNow(new Date(loadedAt), { addSuffix: true }));
+  }, [loadedAt]);
+
+  useEffect(() => {
+    updateLabel();
+    const interval = setInterval(updateLabel, 30_000);
+    return () => clearInterval(interval);
+  }, [updateLabel]);
+
+  function handleRefresh() {
+    setRefreshing(true);
+    router.refresh();
+  }
+
+  return (
+    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <span>Last refreshed {label}</span>
+      <button
+        onClick={handleRefresh}
+        disabled={refreshing}
+        className="inline-flex items-center gap-1 rounded px-2 py-1 hover:bg-gray-100 transition-colors disabled:opacity-50"
+      >
+        <RefreshCw className={cn("h-3 w-3", refreshing && "animate-spin")} />
+        Refresh
+      </button>
+    </div>
+  );
+}
+
 function BookingCell({
   booking,
   isNotInUse,
+  currentUserId,
   onClick,
 }: {
   booking?: SerializedBooking;
   isNotInUse?: boolean;
+  currentUserId: string;
   onClick: () => void;
 }) {
   if (isNotInUse) {
@@ -519,13 +612,26 @@ function BookingCell({
   }
 
   if (booking) {
+    const isOwn = booking.userId === currentUserId;
     return (
       <td className="px-1 py-1.5 text-center">
-        <div className="h-8 rounded bg-blue-100 border border-blue-200 flex items-center justify-center px-1">
-          <span className="text-xs font-medium text-blue-800 truncate">
+        <button
+          className={cn(
+            "h-8 w-full rounded border flex items-center justify-center px-1 cursor-pointer transition-colors",
+            isOwn
+              ? "bg-blue-100 border-blue-300 hover:bg-blue-200"
+              : "bg-gray-100 border-gray-200 hover:bg-gray-200",
+            booking.isRaceSpecific && "ring-1 ring-amber-400"
+          )}
+          onClick={onClick}
+        >
+          <span className={cn(
+            "text-xs font-medium truncate",
+            isOwn ? "text-blue-800" : "text-gray-700"
+          )}>
             {booking.bookerName} ({booking.crewCount})
           </span>
-        </div>
+        </button>
       </td>
     );
   }

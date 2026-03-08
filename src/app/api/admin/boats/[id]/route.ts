@@ -1,36 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createClient } from "@/lib/supabase/server";
-
-async function requireAdmin() {
-  const supabase = await createClient();
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
-
-  if (!authUser) return null;
-
-  const user = await prisma.user.findUnique({
-    where: { email: authUser.email! },
-  });
-
-  const adminRoles = ["admin", "captain", "vice_captain"];
-  if (!user || !adminRoles.includes(user.role)) return null;
-
-  return user;
-}
+import { requirePermission } from "@/lib/auth";
+import { logAudit } from "@/lib/audit";
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const admin = await requireAdmin();
+  const admin = await requirePermission("manage_boats");
   if (!admin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { id } = await params;
   const body = await request.json();
+
+  const before = await prisma.boat.findUnique({ where: { id } });
+  if (!before) {
+    return NextResponse.json({ error: "Boat not found" }, { status: 404 });
+  }
 
   const updateData: Record<string, unknown> = {};
   if (body.status) updateData.status = body.status;
@@ -41,6 +29,15 @@ export async function PATCH(
   const boat = await prisma.boat.update({
     where: { id },
     data: updateData,
+  });
+
+  await logAudit({
+    userId: admin.id,
+    action: "boat.update",
+    targetType: "boat",
+    targetId: id,
+    before: { status: before.status, classification: before.classification, responsibleSquadId: before.responsibleSquadId },
+    after: { status: boat.status, classification: boat.classification, responsibleSquadId: boat.responsibleSquadId },
   });
 
   return NextResponse.json(boat);

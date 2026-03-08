@@ -7,7 +7,6 @@ export async function updateSession(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  // If Supabase env vars are missing, skip auth and let the page render
   if (!supabaseUrl || !supabaseKey) {
     return supabaseResponse;
   }
@@ -38,7 +37,7 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   // Redirect unauthenticated users to login (except public routes)
-  const publicPaths = ["/login", "/auth/callback", "/reset-password"];
+  const publicPaths = ["/login", "/auth/callback", "/register", "/pending-approval", "/reset-password"];
   const isPublicPath = publicPaths.some((path) =>
     request.nextUrl.pathname.startsWith(path)
   );

@@ -1,51 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createClient } from "@/lib/supabase/server";
-import { startOfDay, endOfDay, parseISO } from "date-fns";
-
-async function requireAdmin() {
-  const supabase = await createClient();
-  const {
-    data: { user: authUser },
-  } = await supabase.auth.getUser();
-
-  if (!authUser) return null;
-
-  const user = await prisma.user.findUnique({
-    where: { email: authUser.email! },
-  });
-
-  const adminRoles = ["admin", "captain", "vice_captain"];
-  if (!user || !adminRoles.includes(user.role)) return null;
-
-  return user;
-}
+import { requirePermission } from "@/lib/auth";
+import { parseISO, startOfDay, endOfDay } from "date-fns";
 
 export async function GET(request: NextRequest) {
-  const admin = await requireAdmin();
+  const admin = await requirePermission("manage_bookings");
   if (!admin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { searchParams } = new URL(request.url);
-  const date = searchParams.get("date");
+  const dateFrom = searchParams.get("dateFrom");
+  const dateTo = searchParams.get("dateTo");
+  const boatId = searchParams.get("boatId");
   const userId = searchParams.get("userId");
 
   const where: Record<string, unknown> = {};
-  if (date) {
-    const d = parseISO(date);
-    where.date = { gte: startOfDay(d), lte: endOfDay(d) };
+
+  if (dateFrom && dateTo) {
+    where.date = {
+      gte: startOfDay(parseISO(dateFrom)),
+      lte: endOfDay(parseISO(dateTo)),
+    };
+  } else if (dateFrom) {
+    where.date = { gte: startOfDay(parseISO(dateFrom)) };
   }
-  if (userId) {
-    where.userId = userId;
-  }
+
+  if (boatId) where.boatId = boatId;
+  if (userId) where.userId = userId;
 
   const bookings = await prisma.booking.findMany({
     where,
     include: {
-      boat: true,
-      equipment: true,
-      oarSet: true,
+      boat: { select: { name: true, boatType: true } },
+      equipment: { select: { type: true, number: true } },
+      oarSet: { select: { name: true } },
       user: { select: { fullName: true, email: true } },
     },
     orderBy: [{ date: "desc" }, { startSlot: "asc" }],
