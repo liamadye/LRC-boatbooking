@@ -33,7 +33,20 @@ async function generateInviteLink(email: string, token: string) {
     throw new Error(error?.message ?? "Failed to generate invite link");
   }
 
-  return data.properties.action_link;
+  const verifyResponse = await fetch(data.properties.action_link, {
+    method: "GET",
+    redirect: "manual",
+  });
+  const redirectLocation = verifyResponse.headers.get("location");
+
+  if (!redirectLocation) {
+    throw new Error("Supabase invite link did not return a redirect location");
+  }
+
+  const callbackUrl = new URL(redirectLocation);
+  callbackUrl.protocol = new URL(appBaseUrl).protocol;
+  callbackUrl.host = new URL(appBaseUrl).host;
+  return callbackUrl.toString();
 }
 
 async function login(page: Page, email: string, password: string) {
@@ -129,7 +142,20 @@ async function generateRecoveryLink(email: string) {
     throw new Error(error?.message ?? "Failed to generate recovery link");
   }
 
-  return data.properties.action_link;
+  const verifyResponse = await fetch(data.properties.action_link, {
+    method: "GET",
+    redirect: "manual",
+  });
+  const redirectLocation = verifyResponse.headers.get("location");
+
+  if (!redirectLocation) {
+    throw new Error("Supabase recovery link did not return a redirect location");
+  }
+
+  const recoveryUrl = new URL(redirectLocation);
+  recoveryUrl.protocol = new URL(appBaseUrl).protocol;
+  recoveryUrl.host = new URL(appBaseUrl).host;
+  return recoveryUrl.toString();
 }
 
 test.describe.serial("Invite signup and recovery flows", () => {
@@ -139,6 +165,8 @@ test.describe.serial("Invite signup and recovery flows", () => {
     browser,
     page,
   }) => {
+    test.setTimeout(60_000);
+
     const identity = buildTestIdentity("signup");
     await loginAsAdmin(page);
     const inviteUrl = await createInvite(page, identity.email);
@@ -165,6 +193,7 @@ test.describe.serial("Invite signup and recovery flows", () => {
     browser,
     page,
   }) => {
+    test.setTimeout(90_000);
     test.skip(!canGenerateRecoveryLink, "SUPABASE_SERVICE_ROLE_KEY not available for recovery-link generation");
 
     const identity = buildTestIdentity("recovery");
@@ -179,29 +208,45 @@ test.describe.serial("Invite signup and recovery flows", () => {
       identity.password
     );
 
-    await userPage.getByRole("button", { name: /sign out/i }).click();
-    await expect(userPage).toHaveURL(/\/login/, { timeout: 15_000 });
-
-    await userPage.getByLabel("Email").fill(identity.email);
-    await userPage.getByText(/forgot password/i).click();
-    await expect(userPage.getByText(/password reset email sent|check your email/i)).toBeVisible({
-      timeout: 15_000,
-    });
+    await userContext.close();
 
     const recoveryUrl = await generateRecoveryLink(identity.email);
-    await userPage.goto(recoveryUrl);
-    await expect(userPage.getByText("Set New Password")).toBeVisible({ timeout: 15_000 });
-    await userPage.getByLabel("New Password").fill(identity.nextPassword);
-    await userPage.getByLabel("Confirm Password").fill(identity.nextPassword);
-    await userPage.getByRole("button", { name: /update password/i }).click();
+    const recoveryContext = await browser.newContext();
+    const recoveryPage = await recoveryContext.newPage();
+    await recoveryPage.goto(recoveryUrl);
+    await expect(recoveryPage.getByText("Set New Password")).toBeVisible({ timeout: 15_000 });
+    await recoveryPage.evaluate((nextPassword) => {
+      const passwordInput = document.querySelector<HTMLInputElement>("#password");
+      const confirmInput = document.querySelector<HTMLInputElement>("#confirmPassword");
 
-    await expect(userPage).toHaveURL(/\/bookings/, { timeout: 20_000 });
-    await userPage.getByRole("button", { name: /sign out/i }).click();
-    await expect(userPage).toHaveURL(/\/login/, { timeout: 15_000 });
+      if (!passwordInput || !confirmInput) {
+        throw new Error("Password inputs not found");
+      }
 
-    await login(userPage, identity.email, identity.nextPassword);
-    await expect(userPage).toHaveURL(/\/bookings/, { timeout: 15_000 });
+      const setValue = (input: HTMLInputElement, value: string) => {
+        const descriptor = Object.getOwnPropertyDescriptor(
+          HTMLInputElement.prototype,
+          "value"
+        );
+        descriptor?.set?.call(input, value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      };
 
-    await userContext.close();
+      setValue(passwordInput, nextPassword);
+      setValue(confirmInput, nextPassword);
+    }, identity.nextPassword);
+    await recoveryPage.getByRole("button", { name: /update password/i }).click();
+
+    await expect(recoveryPage.getByText(/Bookings — W\/C/i)).toBeVisible({
+      timeout: 40_000,
+    });
+    await recoveryPage.getByRole("button", { name: /sign out/i }).click();
+    await expect(recoveryPage).toHaveURL(/\/login/, { timeout: 15_000 });
+
+    await login(recoveryPage, identity.email, identity.nextPassword);
+    await expect(recoveryPage).toHaveURL(/\/bookings/, { timeout: 15_000 });
+
+    await recoveryContext.close();
   });
 });

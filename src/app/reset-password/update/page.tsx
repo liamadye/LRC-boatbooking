@@ -9,6 +9,7 @@ import { PasswordRequirements } from "@/components/password-requirements";
 import { PASSWORD_MIN_LENGTH, validatePassword } from "@/lib/passwords";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { clearAuthRedirectState, getHashAuthParams, hydrateSessionFromHash } from "@/lib/supabase/browser-auth";
 
 export default function UpdatePasswordPage() {
   const searchParams = useSearchParams();
@@ -23,14 +24,6 @@ export default function UpdatePasswordPage() {
   const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
-    function clearAuthRedirectState() {
-      const url = new URL(window.location.href);
-      url.searchParams.delete("code");
-      url.searchParams.delete("type");
-      url.hash = "";
-      window.history.replaceState({}, "", `${url.pathname}${url.search}`);
-    }
-
     async function waitForSession(expectSession: boolean) {
       const attempts = expectSession ? 8 : 1;
 
@@ -50,9 +43,12 @@ export default function UpdatePasswordPage() {
     }
 
     async function init() {
-      const hashContainsAccessToken =
-        typeof window !== "undefined" && window.location.hash.includes("access_token");
-      const expectRecoverySession = !!authCode || hashContainsAccessToken;
+      const hashState = getHashAuthParams();
+      if (hashState.accessToken && hashState.refreshToken) {
+        await hydrateSessionFromHash(supabase);
+      }
+
+      const expectRecoverySession = !!authCode || hashState.hasHash;
 
       const session = await waitForSession(expectRecoverySession);
       if (session && expectRecoverySession) {

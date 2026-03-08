@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useState, useEffect } from "react";
+import { getHashAuthParams, hydrateSessionFromHash } from "@/lib/supabase/browser-auth";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -18,16 +19,18 @@ export default function LoginPage() {
 
   // Handle implicit flow: Supabase recovery links put token in URL hash
   useEffect(() => {
-    const hash = window.location.hash;
-    if (hash && hash.includes("access_token")) {
-      // Supabase client auto-picks up the hash token
-      supabase.auth.getSession().then(({ data }) => {
-        if (data.session) {
-          const params = new URLSearchParams(hash.substring(1));
-          const type = params.get("type");
-          window.location.href = type === "recovery" ? "/reset-password/update" : "/bookings";
-        }
-      });
+    const hashState = getHashAuthParams();
+    if (hashState.accessToken && hashState.refreshToken) {
+      hydrateSessionFromHash(supabase)
+        .then(() => supabase.auth.getSession())
+        .then(({ data }) => {
+          if (data.session) {
+            window.location.href = hashState.type === "recovery" ? "/reset-password/update" : "/bookings";
+          }
+        })
+        .catch(() => {
+          setError("This sign-in link is invalid or has expired.");
+        });
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

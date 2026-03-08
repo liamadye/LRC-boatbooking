@@ -9,6 +9,7 @@ import { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { PasswordRequirements } from "@/components/password-requirements";
 import { PASSWORD_MIN_LENGTH, validatePassword } from "@/lib/passwords";
+import { clearAuthRedirectState, getHashAuthParams, hydrateSessionFromHash } from "@/lib/supabase/browser-auth";
 
 export default function RegisterPage() {
   return (
@@ -48,14 +49,6 @@ function RegisterForm() {
       return;
     }
 
-    function clearAuthRedirectState() {
-      const url = new URL(window.location.href);
-      url.searchParams.delete("code");
-      url.searchParams.delete("type");
-      url.hash = "";
-      window.history.replaceState({}, "", `${url.pathname}${url.search}`);
-    }
-
     async function waitForSession(expectSession: boolean) {
       const attempts = expectSession ? 8 : 1;
 
@@ -75,9 +68,12 @@ function RegisterForm() {
     }
 
     async function init() {
-      const hashContainsAccessToken =
-        typeof window !== "undefined" && window.location.hash.includes("access_token");
-      const expectInviteSession = !!authCode || hashContainsAccessToken;
+      const hashState = getHashAuthParams();
+      if (hashState.accessToken && hashState.refreshToken) {
+        await hydrateSessionFromHash(supabase);
+      }
+
+      const expectInviteSession = !!authCode || hashState.hasHash;
       setRequiresInviteSession(expectInviteSession);
 
       const session = await waitForSession(expectInviteSession);
