@@ -7,6 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import { PasswordRequirements } from "@/components/password-requirements";
+import { PASSWORD_MIN_LENGTH, validatePassword } from "@/lib/passwords";
 
 export default function RegisterPage() {
   return (
@@ -23,16 +25,19 @@ export default function RegisterPage() {
 function RegisterForm() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
+  const authCode = searchParams.get("code");
 
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [validating, setValidating] = useState(true);
   const [valid, setValid] = useState(false);
   const [hasSession, setHasSession] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
+  const [requiresInviteSession, setRequiresInviteSession] = useState(false);
 
   const supabase = useMemo(() => createClient(), []);
 
@@ -43,13 +48,45 @@ function RegisterForm() {
       return;
     }
 
+    function clearAuthRedirectState() {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("code");
+      url.searchParams.delete("type");
+      url.hash = "";
+      window.history.replaceState({}, "", `${url.pathname}${url.search}`);
+    }
+
+    async function waitForSession(expectSession: boolean) {
+      const attempts = expectSession ? 8 : 1;
+
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (session?.user?.email || !expectSession) {
+          return session;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+
+      return null;
+    }
+
     async function init() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      const hashContainsAccessToken =
+        typeof window !== "undefined" && window.location.hash.includes("access_token");
+      const expectInviteSession = !!authCode || hashContainsAccessToken;
+      setRequiresInviteSession(expectInviteSession);
+
+      const session = await waitForSession(expectInviteSession);
       if (session?.user?.email) {
         setHasSession(true);
         setEmail(session.user.email);
+        if (expectInviteSession) {
+          clearAuthRedirectState();
+        }
       }
       setSessionReady(true);
 
@@ -98,6 +135,19 @@ function RegisterForm() {
     setLoading(true);
     setError(null);
 
+    const passwordError = validatePassword(password, confirmPassword);
+    if (passwordError) {
+      setError(passwordError);
+      setLoading(false);
+      return;
+    }
+
+    if (requiresInviteSession && !hasSession) {
+      setError("This invite link did not establish a sign-in session. Please request a new invite link.");
+      setLoading(false);
+      return;
+    }
+
     if (hasSession) {
       // User came via Supabase invite email — already authenticated
       // Set their password so they can log in with email/password in future
@@ -141,6 +191,23 @@ function RegisterForm() {
       }
     }
 
+    const {
+      data: { session: activeSession },
+    } = await supabase.auth.getSession();
+
+    if (!activeSession) {
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (signInError) {
+        setError(`Password was set, but automatic sign-in failed: ${signInError.message}`);
+        setLoading(false);
+        return;
+      }
+    }
+
     // Accept the invitation (creates the user profile with correct role/memberType)
     const res = await fetch("/api/register/accept", {
       method: "POST",
@@ -155,7 +222,7 @@ function RegisterForm() {
       return;
     }
 
-    window.location.href = "/bookings";
+    window.location.assign("/bookings");
   }
 
   if (validating || !sessionReady) {
@@ -227,9 +294,22 @@ function RegisterForm() {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder={hasSession ? "Set your password" : "Choose a password"}
                 required
-                minLength={6}
+                minLength={PASSWORD_MIN_LENGTH}
               />
             </div>
+            <div>
+              <Label htmlFor="confirmPassword">Confirm Password</Label>
+              <Input
+                id="confirmPassword"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Re-enter your password"
+                required
+                minLength={PASSWORD_MIN_LENGTH}
+              />
+            </div>
+            <PasswordRequirements password={password} />
 
             {error && (
               <p className="text-sm text-red-600">{error}</p>

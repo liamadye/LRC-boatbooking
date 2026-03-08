@@ -155,7 +155,7 @@ export default function LoginPage() {
                 setLoading(true);
                 setError(null);
                 const { error: resetError } = await supabase.auth.resetPasswordForEmail(target, {
-                  redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
+                  redirectTo: `${window.location.origin}/reset-password/update`,
                 });
                 setLoading(false);
                 if (resetError) {

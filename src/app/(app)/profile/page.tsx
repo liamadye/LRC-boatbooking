@@ -6,8 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { PasswordRequirements } from "@/components/password-requirements";
 import { useToast } from "@/hooks/use-toast";
 import { createClient } from "@/lib/supabase/client";
+import { PASSWORD_MIN_LENGTH, validatePassword } from "@/lib/passwords";
 import type { UserProfile } from "@/lib/types";
 
 export default function ProfilePage() {
@@ -153,12 +155,9 @@ function ChangePasswordCard() {
 
   async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();
-    if (newPassword.length < 6) {
-      toast({ title: "Password must be at least 6 characters", variant: "destructive" });
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      toast({ title: "Passwords do not match", variant: "destructive" });
+    const passwordError = validatePassword(newPassword, confirmPassword);
+    if (passwordError) {
+      toast({ title: passwordError, variant: "destructive" });
       return;
     }
 
@@ -191,7 +190,7 @@ function ChangePasswordCard() {
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={PASSWORD_MIN_LENGTH}
             />
           </div>
           <div>
@@ -202,8 +201,10 @@ function ChangePasswordCard() {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
+              minLength={PASSWORD_MIN_LENGTH}
             />
           </div>
+          <PasswordRequirements password={newPassword} />
           <Button type="submit" disabled={saving}>
             {saving ? "Updating..." : "Update Password"}
           </Button>
