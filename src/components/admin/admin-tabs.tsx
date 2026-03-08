@@ -49,7 +49,7 @@ export function AdminTabs({
 }) {
   return (
     <Tabs defaultValue="boats">
-      <TabsList className="w-full overflow-x-auto flex-wrap sm:flex-nowrap h-auto gap-1">
+      <TabsList className="w-full overflow-x-auto flex-nowrap h-auto gap-1 justify-start">
         <TabsTrigger value="boats">
           Boats ({boats.length})
         </TabsTrigger>

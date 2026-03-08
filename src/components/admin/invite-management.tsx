@@ -168,8 +168,8 @@ export function InviteManagement({
 
   return (
     <div className="space-y-6 mt-4">
-      <form onSubmit={handleInvite} className="flex items-end gap-3 flex-wrap">
-        <div>
+      <form onSubmit={handleInvite} className="space-y-3 sm:space-y-0 sm:flex sm:items-end sm:gap-3 sm:flex-wrap">
+        <div className="flex-1 min-w-0 sm:flex-none">
           <Label htmlFor="inviteEmail">Email</Label>
           <Input
             id="inviteEmail"
@@ -178,38 +178,40 @@ export function InviteManagement({
             onChange={(e) => setEmail(e.target.value)}
             placeholder="member@example.com"
             required
-            className="w-64"
+            className="sm:w-64"
           />
         </div>
-        <div>
-          <Label htmlFor="inviteRole">Role</Label>
-          <select
-            id="inviteRole"
-            className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-          >
-            <option value="member">Member</option>
-            <option value="squad_captain">Squad Captain</option>
-            <option value="vice_captain">Vice Captain</option>
-            <option value="captain">Captain</option>
-            <option value="admin">Admin</option>
-          </select>
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-3">
+          <div>
+            <Label htmlFor="inviteRole">Role</Label>
+            <select
+              id="inviteRole"
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+            >
+              <option value="member">Member</option>
+              <option value="squad_captain">Squad Captain</option>
+              <option value="vice_captain">Vice Captain</option>
+              <option value="captain">Captain</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <div>
+            <Label htmlFor="inviteMemberType">Member Type</Label>
+            <select
+              id="inviteMemberType"
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={memberType}
+              onChange={(e) => setMemberType(e.target.value)}
+            >
+              <option value="senior_competitive">Senior Competitive</option>
+              <option value="student">Student</option>
+              <option value="recreational">Recreational</option>
+            </select>
+          </div>
         </div>
-        <div>
-          <Label htmlFor="inviteMemberType">Member Type</Label>
-          <select
-            id="inviteMemberType"
-            className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-            value={memberType}
-            onChange={(e) => setMemberType(e.target.value)}
-          >
-            <option value="senior_competitive">Senior Competitive</option>
-            <option value="student">Student</option>
-            <option value="recreational">Recreational</option>
-          </select>
-        </div>
-        <Button type="submit" disabled={loading}>
+        <Button type="submit" disabled={loading} className="w-full sm:w-auto">
           {loading ? "Sending..." : "Send Invite"}
         </Button>
       </form>
@@ -242,49 +244,57 @@ export function InviteManagement({
           <div className="space-y-2">
             {pending.map((inv) => (
               <Card key={inv.id}>
-                <CardContent className="flex items-center justify-between py-3">
-                  <div>
-                    <div className="font-medium">{inv.email}</div>
-                    <div className="text-xs text-muted-foreground">
-                      Invited by {inv.inviter.fullName} —{" "}
-                      <Badge variant="outline" className="text-[10px]">{inv.role}</Badge>{" "}
-                      <Badge variant="secondary" className="text-[10px]">
-                        {inv.memberType.replace("_", " ")}
-                      </Badge>
-                      {inv.squads.map((squad) => (
-                        <Badge key={squad.id} variant="outline" className="ml-1 text-[10px]">
-                          {squad.name}
+                <CardContent className="py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">{inv.email}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        Invited by {inv.inviter.fullName}
+                      </div>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        <Badge variant="outline" className="text-[10px]">{inv.role}</Badge>
+                        <Badge variant="secondary" className="text-[10px]">
+                          {inv.memberType.replace("_", " ")}
                         </Badge>
-                      ))}
-                      {" "}— Expires {new Date(inv.expiresAt).toLocaleDateString()}
+                        {inv.squads.map((squad) => (
+                          <Badge key={squad.id} variant="outline" className="text-[10px]">
+                            {squad.name}
+                          </Badge>
+                        ))}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground mt-1">
+                        Expires {new Date(inv.expiresAt).toLocaleDateString()}
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex flex-wrap items-center gap-1 mt-2 pt-2 border-t">
                     <Button
                       variant="ghost"
                       size="sm"
+                      className="text-xs h-7"
                       onClick={() => copyLink(inv)}
                     >
-                      <Copy className="h-4 w-4 mr-1" />
+                      <Copy className="h-3 w-3 mr-1" />
                       Copy Link
                     </Button>
                     <Button
                       variant="ghost"
                       size="sm"
+                      className="text-xs h-7"
                       disabled={actionLoadingId === `resend:${inv.id}`}
                       onClick={() => resendInvitation(inv)}
                     >
-                      <RefreshCw className="h-4 w-4 mr-1" />
-                      Renew Link
+                      <RefreshCw className="h-3 w-3 mr-1" />
+                      Renew
                     </Button>
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="text-red-600 hover:text-red-700"
+                      className="text-red-600 hover:text-red-700 text-xs h-7"
                       disabled={actionLoadingId === `delete:${inv.id}`}
                       onClick={() => deleteInvitation(inv)}
                     >
-                      <Trash2 className="h-4 w-4 mr-1" />
+                      <Trash2 className="h-3 w-3 mr-1" />
                       Delete
                     </Button>
                   </div>
@@ -331,38 +341,41 @@ export function InviteManagement({
           <div className="space-y-2">
             {expired.map((inv) => (
               <Card key={inv.id}>
-                <CardContent className="flex items-center justify-between py-3">
-                  <div>
-                    <div className="font-medium text-muted-foreground">{inv.email}</div>
-                    {inv.squads.length > 0 && (
-                      <div className="text-xs text-muted-foreground mt-1">
-                        {inv.squads.map((squad) => (
-                          <Badge key={squad.id} variant="outline" className="mr-1 text-[10px]">
-                            {squad.name}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
+                <CardContent className="py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-medium text-muted-foreground truncate">{inv.email}</div>
+                      {inv.squads.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {inv.squads.map((squad) => (
+                            <Badge key={squad.id} variant="outline" className="text-[10px]">
+                              {squad.name}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <Badge variant="secondary" className="flex-shrink-0">Expired</Badge>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <Badge variant="secondary">Expired</Badge>
+                  <div className="flex flex-wrap items-center gap-1 mt-2 pt-2 border-t">
                     <Button
                       variant="ghost"
                       size="sm"
+                      className="text-xs h-7"
                       disabled={actionLoadingId === `resend:${inv.id}`}
                       onClick={() => resendInvitation(inv)}
                     >
-                      <RefreshCw className="h-4 w-4 mr-1" />
-                      Renew Link
+                      <RefreshCw className="h-3 w-3 mr-1" />
+                      Renew
                     </Button>
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="text-red-600 hover:text-red-700"
+                      className="text-red-600 hover:text-red-700 text-xs h-7"
                       disabled={actionLoadingId === `delete:${inv.id}`}
                       onClick={() => deleteInvitation(inv)}
                     >
-                      <Trash2 className="h-4 w-4 mr-1" />
+                      <Trash2 className="h-3 w-3 mr-1" />
                       Delete
                     </Button>
                   </div>

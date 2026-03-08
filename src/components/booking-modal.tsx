@@ -55,9 +55,14 @@ export function BookingModal({
     ? user.squads.find((s) => s.id === editingBooking?.squadId)
     : null;
 
-  const [bookerName, setBookerName] = useState(editingBooking?.bookerName ?? user.fullName);
+  const defaultSquad = matchingSquad ?? (canBookAsSquad ? user.squads[0] : null);
+  const defaultToSquad = matchingSquad || (canBookAsSquad && !isEditing);
+  const [bookerName, setBookerName] = useState(
+    editingBooking?.bookerName ??
+    (defaultToSquad && defaultSquad ? defaultSquad.name : user.fullName)
+  );
   const [bookingMode, setBookingMode] = useState<"person" | "squad">(
-    matchingSquad ? "squad" : "person"
+    defaultToSquad ? "squad" : "person"
   );
   const [selectedSquadId, setSelectedSquadId] = useState<string>(
     matchingSquad?.id ?? user.squads[0]?.id ?? ""
