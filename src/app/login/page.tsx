@@ -25,7 +25,7 @@ export default function LoginPage() {
         if (data.session) {
           const params = new URLSearchParams(hash.substring(1));
           const type = params.get("type");
-          window.location.href = type === "recovery" ? "/profile" : "/bookings";
+          window.location.href = type === "recovery" ? "/reset-password/update" : "/bookings";
         }
       });
     }
