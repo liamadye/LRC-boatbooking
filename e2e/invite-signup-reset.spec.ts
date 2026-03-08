@@ -11,8 +11,30 @@ const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
 const canGenerateRecoveryLink = !!(supabaseUrl && serviceRoleKey);
 
 type InviteResponse = {
-  inviteUrl: string;
+  inviteUrl: string | null;
+  token: string;
 };
+
+async function generateInviteLink(email: string, token: string) {
+  const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  const { data, error } = await adminClient.auth.admin.generateLink({
+    type: "invite",
+    email,
+    options: {
+      redirectTo: `${appBaseUrl}/register?token=${token}`,
+      data: { invitation_token: token },
+    },
+  });
+
+  if (error || !data.properties?.action_link) {
+    throw new Error(error?.message ?? "Failed to generate invite link");
+  }
+
+  return data.properties.action_link;
+}
 
 async function login(page: Page, email: string, password: string) {
   await page.goto(`${appBaseUrl}/login`);
@@ -48,8 +70,16 @@ async function createInvite(page: Page, email: string) {
   const response = await responsePromise;
   expect(response.ok()).toBeTruthy();
   const data = (await response.json()) as InviteResponse;
-  expect(data.inviteUrl).toBeTruthy();
-  return data.inviteUrl;
+
+  if (data.inviteUrl) {
+    return data.inviteUrl;
+  }
+
+  if (!canGenerateRecoveryLink) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY not available for invite-link generation");
+  }
+
+  return generateInviteLink(email, data.token);
 }
 
 async function registerInvitedUser(

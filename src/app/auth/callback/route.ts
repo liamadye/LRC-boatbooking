@@ -9,12 +9,34 @@ export async function GET(request: Request) {
 
   if (code) {
     const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
       // Redirect to dedicated password reset page for recovery flow
       if (type === "recovery") {
         return NextResponse.redirect(`${origin}/reset-password/update`);
       }
+
+      if (type === "invite") {
+        let invitationToken =
+          data.user?.user_metadata?.invitation_token ??
+          data.session?.user?.user_metadata?.invitation_token;
+
+        if (!invitationToken) {
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          invitationToken = user?.user_metadata?.invitation_token;
+        }
+
+        if (typeof invitationToken === "string" && invitationToken.length > 0) {
+          return NextResponse.redirect(
+            `${origin}/register?token=${encodeURIComponent(invitationToken)}`
+          );
+        }
+
+        return NextResponse.redirect(`${origin}/register`);
+      }
+
       return NextResponse.redirect(`${origin}${next}`);
     }
   }
