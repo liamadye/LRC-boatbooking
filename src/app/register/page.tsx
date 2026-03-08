@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
 export default function RegisterPage() {
@@ -32,8 +32,9 @@ function RegisterForm() {
   const [validating, setValidating] = useState(true);
   const [valid, setValid] = useState(false);
   const [hasSession, setHasSession] = useState(false);
+  const [sessionReady, setSessionReady] = useState(false);
 
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
     if (!token) {
@@ -43,12 +44,14 @@ function RegisterForm() {
     }
 
     async function init() {
-      // Check if user already has a session (from Supabase invite email flow)
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (session?.user?.email) {
         setHasSession(true);
         setEmail(session.user.email);
       }
+      setSessionReady(true);
 
       // Validate the invitation token
       const res = await fetch(`/api/register/validate?token=${token}`);
@@ -70,6 +73,25 @@ function RegisterForm() {
       setValidating(false);
     });
   }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (
+        (event === "SIGNED_IN" || event === "PASSWORD_RECOVERY" || event === "INITIAL_SESSION") &&
+        session?.user?.email
+      ) {
+        setHasSession(true);
+        setEmail(session.user.email);
+      }
+      setSessionReady(true);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [supabase]);
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
@@ -136,10 +158,10 @@ function RegisterForm() {
     window.location.href = "/bookings";
   }
 
-  if (validating) {
+  if (validating || !sessionReady) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <p className="text-muted-foreground">Validating invitation...</p>
+        <p className="text-muted-foreground">Preparing invitation...</p>
       </div>
     );
   }

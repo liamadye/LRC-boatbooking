@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { TIME_SLOTS, BOAT_SECTIONS, SECTION_COLORS } from "@/lib/constants";
 import { MobileBookingView } from "@/components/mobile-booking-view";
 import { TotalsBar } from "@/components/totals-bar";
-import { ChevronDown, ChevronRight, Circle, Lock, Ban, RefreshCw } from "lucide-react";
+import { ChevronDown, ChevronRight, Circle, Lock, Ban, RefreshCw, Loader2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import type {
   BoatWithRelations,
@@ -35,6 +35,8 @@ type Props = {
   loadedAt?: string;
   onRefresh?: () => Promise<void> | void;
   refreshing?: boolean;
+  onBookingPending?: (booking: SerializedBooking) => void;
+  onPendingBookingResolved?: (tempId: string, booking: SerializedBooking | null) => void;
   onBookingSaved?: (booking: SerializedBooking) => void;
   onBookingDeleted?: (bookingId: string) => void;
 };
@@ -56,6 +58,8 @@ export function BookingGrid({
   loadedAt,
   onRefresh,
   refreshing = false,
+  onBookingPending,
+  onPendingBookingResolved,
   onBookingSaved,
   onBookingDeleted,
 }: Props) {
@@ -156,6 +160,9 @@ export function BookingGrid({
   ) {
     const existing = getBooking(resourceId, slot);
     if (existing) {
+      if (existing.clientStatus === "pending") {
+        return;
+      }
       setSelectedBooking(existing);
       return;
     }
@@ -402,6 +409,8 @@ export function BookingGrid({
           user={user}
           boats={boats}
           editingBooking={editingBooking ?? undefined}
+          onCreatePending={onBookingPending}
+          onCreateResolved={onPendingBookingResolved}
           onSaved={(booking) => {
             onBookingSaved?.(booking);
           }}
@@ -644,21 +653,30 @@ function BookingCell({
 
   if (booking) {
     const isOwn = booking.userId === currentUserId;
+    const isPending = booking.clientStatus === "pending";
     return (
       <td className="px-1 py-1.5 text-center">
         <button
           className={cn(
             "h-8 w-full rounded border flex items-center justify-center px-1 cursor-pointer transition-colors",
-            isOwn
-              ? "bg-blue-100 border-blue-300 hover:bg-blue-200"
-              : "bg-gray-100 border-gray-200 hover:bg-gray-200",
+            isPending
+              ? "cursor-wait border-dashed bg-amber-50 border-amber-300 hover:bg-amber-50"
+              : isOwn
+                ? "bg-blue-100 border-blue-300 hover:bg-blue-200"
+                : "bg-gray-100 border-gray-200 hover:bg-gray-200",
             booking.isRaceSpecific && "ring-1 ring-amber-400"
           )}
           onClick={onClick}
+          disabled={isPending}
         >
+          {isPending && <Loader2 className="mr-1 h-3 w-3 animate-spin text-amber-700" />}
           <span className={cn(
             "text-xs font-medium truncate",
-            isOwn ? "text-blue-800" : "text-gray-700"
+            isPending
+              ? "text-amber-800"
+              : isOwn
+                ? "text-blue-800"
+                : "text-gray-700"
           )}>
             {getBookingDisplayName(booking)} ({booking.crewCount})
           </span>

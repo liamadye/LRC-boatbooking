@@ -8,7 +8,7 @@ export async function getInvitationUrls(email: string, token: string) {
   const origin = `${protocol}://${host}`;
   const registerPath = `/register?token=${token}`;
   const manualUrl = `${origin}${registerPath}`;
-  const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(registerPath)}`;
+  const redirectTo = manualUrl;
 
   const adminClient = createAdminClient();
   if (!adminClient) {

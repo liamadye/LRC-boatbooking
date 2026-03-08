@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import {
   Dialog,
   DialogContent,
@@ -24,12 +24,25 @@ type BookingTarget = {
   slot: number;
 };
 
+type BookingPayload = {
+  bookerName: string;
+  squadId: string | null;
+  endSlot: number;
+  isRaceSpecific: boolean;
+  raceDetails: string | null;
+  notes: string | null;
+};
+
+type BookingSubmission = { payload: BookingPayload } | { errors: string[] };
+
 export function BookingModal({
   target,
   selectedDate,
   user,
   boats,
   editingBooking,
+  onCreatePending,
+  onCreateResolved,
   onSaved,
   onClose,
 }: {
@@ -38,6 +51,8 @@ export function BookingModal({
   user: UserProfile;
   boats: BoatWithRelations[];
   editingBooking?: SerializedBooking;
+  onCreatePending?: (booking: SerializedBooking) => void;
+  onCreateResolved?: (tempId: string, booking: SerializedBooking | null) => void;
   onSaved?: (booking: SerializedBooking) => void;
   onClose: () => void;
 }) {
@@ -56,7 +71,7 @@ export function BookingModal({
     : null;
 
   const defaultSquad = matchingSquad ?? (canBookAsSquad ? user.squads[0] : null);
-  const defaultToSquad = matchingSquad || (canBookAsSquad && !isEditing);
+  const defaultToSquad = !!matchingSquad || (canBookAsSquad && !isEditing);
   const [bookerName, setBookerName] = useState(
     editingBooking?.bookerName ??
     (defaultToSquad && defaultSquad ? defaultSquad.name : user.fullName)
@@ -101,74 +116,183 @@ export function BookingModal({
     }
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setErrors([]);
+  function buildPayload(): BookingSubmission {
     let submitBookerName = bookerName;
     let submitSquadId: string | null = null;
 
     if (canBookAsSquad && bookingMode === "squad") {
       const selected = user.squads.find((s) => s.id === selectedSquadId);
       if (!selected) {
-        setErrors(["Please select a squad to continue."]);
-        setLoading(false);
-        return;
+        return { errors: ["Please select a squad to continue."] };
       }
       submitBookerName = selected.name;
       submitSquadId = selected.id;
     }
 
-    try {
-      let res: Response;
+    return {
+      payload: {
+        bookerName: submitBookerName,
+        squadId: submitSquadId,
+        endSlot,
+        isRaceSpecific,
+        raceDetails: isRaceSpecific ? raceDetails : null,
+        notes: notes || null,
+      },
+    };
+  }
 
-      if (isEditing) {
-        res = await fetch(`/api/bookings/${editingBooking.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            bookerName: submitBookerName,
-            squadId: submitSquadId,
-            endSlot,
-            isRaceSpecific,
-            raceDetails: isRaceSpecific ? raceDetails : null,
-            notes: notes || null,
-          }),
+  function getErrorMessage(data: unknown, fallback: string) {
+    if (typeof data !== "object" || data === null) {
+      return fallback;
+    }
+
+    if ("errors" in data && Array.isArray(data.errors)) {
+      const messages = data.errors
+        .map((error) =>
+          typeof error === "object" &&
+          error !== null &&
+          "message" in error &&
+          typeof error.message === "string"
+            ? error.message
+            : null
+        )
+        .filter((message): message is string => !!message);
+      if (messages.length > 0) {
+        return messages.join(" ");
+      }
+    }
+
+    if ("error" in data && typeof data.error === "string") {
+      return data.error;
+    }
+
+    return fallback;
+  }
+
+  function buildOptimisticBooking(payload: BookingPayload): SerializedBooking {
+    const optimisticId =
+      globalThis.crypto?.randomUUID?.() ??
+      `pending-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const squad = payload.squadId
+      ? user.squads.find((entry) => entry.id === payload.squadId) ?? null
+      : null;
+
+    return {
+      id: `pending-${optimisticId}`,
+      date: selectedDate,
+      resourceType: target.resourceType,
+      boatId: target.resourceType === "boat" ? target.resourceId : null,
+      equipmentId: target.resourceType === "equipment" ? target.resourceId : null,
+      oarSetId: target.resourceType === "oar_set" ? target.resourceId : null,
+      userId: user.id,
+      squadId: payload.squadId,
+      bookerName: payload.bookerName,
+      crewCount: maxCrew,
+      startSlot: target.slot,
+      endSlot: payload.endSlot,
+      isRaceSpecific: payload.isRaceSpecific,
+      raceDetails: payload.raceDetails,
+      notes: payload.notes,
+      squad,
+      clientStatus: "pending",
+    };
+  }
+
+  async function handleCreateInBackground(payload: BookingPayload) {
+    const optimisticBooking = buildOptimisticBooking(payload);
+    onCreatePending?.(optimisticBooking);
+
+    const pendingToast = toast({
+      title: "Processing booking",
+      description: `${target.resourceName} is being booked.`,
+      duration: 20000,
+    });
+
+    onClose();
+
+    try {
+      const res = await fetch("/api/bookings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date: selectedDate,
+          resourceType: target.resourceType,
+          resourceId: target.resourceId,
+          crewCount: maxCrew,
+          startSlot: target.slot,
+          ...payload,
+        }),
+      });
+      const data = await res.json();
+      pendingToast.dismiss();
+
+      if (!res.ok) {
+        onCreateResolved?.(optimisticBooking.id, null);
+        toast({
+          title: "Booking failed",
+          description: getErrorMessage(data, "Failed to create booking."),
+          variant: "destructive",
         });
-      } else {
-        res = await fetch("/api/bookings", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            date: selectedDate,
-            resourceType: target.resourceType,
-            resourceId: target.resourceId,
-            bookerName: submitBookerName,
-            squadId: submitSquadId,
-            crewCount: maxCrew,
-            startSlot: target.slot,
-            endSlot,
-            isRaceSpecific,
-            raceDetails: isRaceSpecific ? raceDetails : null,
-            notes: notes || null,
-          }),
-        });
+        return;
       }
 
+      if (onCreateResolved) {
+        onCreateResolved(optimisticBooking.id, data as SerializedBooking);
+      } else {
+        onSaved?.(data as SerializedBooking);
+      }
+      toast({
+        title: "Booking created",
+        description: `${target.resourceName} booked successfully.`,
+      });
+    } catch {
+      pendingToast.dismiss();
+      onCreateResolved?.(optimisticBooking.id, null);
+      toast({
+        title: "Booking failed",
+        description: "Network error. Please try again.",
+        variant: "destructive",
+      });
+    }
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (loading) {
+      return;
+    }
+
+    setErrors([]);
+
+    const submission = buildPayload();
+    if ("errors" in submission) {
+      setErrors(submission.errors);
+      return;
+    }
+
+    setLoading(true);
+
+    if (!isEditing) {
+      void handleCreateInBackground(submission.payload);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/bookings/${editingBooking.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(submission.payload),
+      });
       const data = await res.json();
 
       if (!res.ok) {
-        if (data.errors) {
-          setErrors(data.errors.map((e: { message: string }) => e.message));
-        } else {
-          setErrors([data.error ?? `Failed to ${isEditing ? "update" : "create"} booking`]);
-        }
+        setErrors([getErrorMessage(data, "Failed to update booking.")]);
         return;
       }
 
       toast({
-        title: isEditing ? "Booking updated" : "Booking created",
-        description: `${target.resourceName} ${isEditing ? "updated" : "booked"} successfully.`,
+        title: "Booking updated",
+        description: `${target.resourceName} updated successfully.`,
       });
       onSaved?.(data as SerializedBooking);
       onClose();
@@ -183,7 +307,10 @@ export function BookingModal({
 
   return (
     <Dialog open onOpenChange={() => onClose()}>
-      <DialogContent className="max-w-md w-[calc(100%-2rem)] mx-auto">
+      <DialogContent
+        className="max-w-md w-[calc(100%-2rem)] mx-auto"
+        onOpenAutoFocus={(event) => event.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit" : "Book"} {target.resourceName}</DialogTitle>
         </DialogHeader>
@@ -217,21 +344,39 @@ export function BookingModal({
 
           {canBookAsSquad && (
             <div className="space-y-2">
-              <Label htmlFor="bookingMode">Booking For</Label>
-              <select
+              <Label id="bookingModeLabel">Booking For</Label>
+              <div
                 id="bookingMode"
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                value={bookingMode}
-                onChange={(e) =>
-                  handleBookingModeChange(e.target.value as "person" | "squad")
-                }
+                className="grid grid-cols-2 gap-2"
+                role="radiogroup"
+                aria-labelledby="bookingModeLabel"
               >
-                <option value="person">Person ({user.fullName})</option>
-                <option value="squad">Squad</option>
-              </select>
+                <Button
+                  type="button"
+                  variant={bookingMode === "person" ? "default" : "outline"}
+                  className="w-full"
+                  onClick={() => handleBookingModeChange("person")}
+                >
+                  Person
+                </Button>
+                <Button
+                  type="button"
+                  variant={bookingMode === "squad" ? "default" : "outline"}
+                  className="w-full"
+                  onClick={() => handleBookingModeChange("squad")}
+                >
+                  Squad
+                </Button>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {bookingMode === "person"
+                  ? `Booking as ${user.fullName}`
+                  : "Booking on behalf of a squad"}
+              </div>
 
               {bookingMode === "squad" && (
                 <select
+                  id="selectedSquadId"
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                   value={selectedSquadId}
                   onChange={(e) => handleSquadChange(e.target.value)}

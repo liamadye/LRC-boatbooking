@@ -43,6 +43,7 @@ export function BookingsClient({
   const { toast } = useToast();
   const [selectedDate, setSelectedDate] = useState(initialSelectedDate);
   const [weekData, setWeekData] = useState(initialWeekData);
+  const [pendingBookings, setPendingBookings] = useState<SerializedBooking[]>([]);
   const [loadedAt, setLoadedAt] = useState(new Date().toISOString());
   const [loadingWeek, setLoadingWeek] = useState(false);
   const cacheRef = useRef(new Map<string, BookingWeekPayload>([
@@ -56,6 +57,17 @@ export function BookingsClient({
     () => Array.from({ length: 7 }, (_, index) => addDays(weekStartObj, index)),
     [weekStartObj]
   );
+  const visibleBookings = useMemo(() => {
+    const pendingForWeek = pendingBookings.filter(
+      (booking) => getWeekStartKey(parseISO(booking.date)) === weekData.weekStart
+    );
+
+    if (pendingForWeek.length === 0) {
+      return weekData.bookings;
+    }
+
+    return sortBookings([...weekData.bookings, ...pendingForWeek]);
+  }, [pendingBookings, weekData.bookings, weekData.weekStart]);
 
   const updateUrl = useCallback((nextDate: string) => {
     window.history.replaceState(null, "", `/bookings?date=${nextDate}`);
@@ -190,6 +202,34 @@ export function BookingsClient({
     []
   );
 
+  const applyBookingChangeForWeek = useCallback(
+    (targetWeekStart: string, updater: (current: SerializedBooking[]) => SerializedBooking[]) => {
+      if (weekData.weekStart === targetWeekStart) {
+        setWeekData((current) => {
+          const next = {
+            ...current,
+            bookings: sortBookings(updater(current.bookings)),
+          };
+          cacheRef.current.set(current.weekStart, next);
+          return next;
+        });
+        setLoadedAt(new Date().toISOString());
+        return;
+      }
+
+      const cached = cacheRef.current.get(targetWeekStart);
+      if (!cached) {
+        return;
+      }
+
+      cacheRef.current.set(targetWeekStart, {
+        ...cached,
+        bookings: sortBookings(updater(cached.bookings)),
+      });
+    },
+    [weekData.weekStart]
+  );
+
   const handleBookingSaved = useCallback(
     (booking: SerializedBooking) => {
       applyBookingChange((current) => {
@@ -198,6 +238,28 @@ export function BookingsClient({
       });
     },
     [applyBookingChange]
+  );
+
+  const handleBookingPending = useCallback((booking: SerializedBooking) => {
+    setPendingBookings((current) => sortBookings([...current, booking]));
+    setLoadedAt(new Date().toISOString());
+  }, []);
+
+  const handlePendingBookingResolved = useCallback(
+    (tempId: string, booking: SerializedBooking | null) => {
+      setPendingBookings((current) => current.filter((entry) => entry.id !== tempId));
+
+      if (!booking) {
+        return;
+      }
+
+      const bookingWeekStart = getWeekStartKey(parseISO(booking.date));
+      applyBookingChangeForWeek(bookingWeekStart, (current) => {
+        const remaining = current.filter((entry) => entry.id !== booking.id);
+        return [...remaining, booking];
+      });
+    },
+    [applyBookingChangeForWeek]
   );
 
   const handleBookingDeleted = useCallback(
@@ -231,12 +293,14 @@ export function BookingsClient({
         boats={boats}
         equipment={equipment}
         oarSets={oarSets}
-        bookings={weekData.bookings}
+        bookings={visibleBookings}
         selectedDate={selectedDate}
         user={user}
         loadedAt={loadedAt}
         onRefresh={refreshCurrentWeek}
         refreshing={loadingWeek}
+        onBookingPending={handleBookingPending}
+        onPendingBookingResolved={handlePendingBookingResolved}
         onBookingSaved={handleBookingSaved}
         onBookingDeleted={handleBookingDeleted}
       />

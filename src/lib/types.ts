@@ -67,6 +67,7 @@ export type SerializedBooking = {
   raceDetails?: string | null;
   notes: string | null;
   squad: SquadSummary | null;
+  clientStatus?: "pending";
 };
 
 export type BookingWeekSummary = {
