@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { serializeBooking } from "@/lib/booking-utils";
+import { getSydneyToday } from "@/lib/sydney-time";
 
 export async function GET() {
   const supabase = await createClient();
@@ -24,7 +25,7 @@ export async function GET() {
   const bookings = await prisma.booking.findMany({
     where: {
       userId: user.id,
-      date: { gte: new Date() },
+      date: { gte: getSydneyToday() },
     },
     include: {
       boat: { select: { name: true, boatType: true } },

@@ -12,6 +12,7 @@ type BookingInput = {
   boatStatus?: "available" | "not_in_use";
   boatAvgWeightKg?: number | null;
   boatOwnerUserId?: string | null;
+  privateBoatAccessUserIds?: string[];
   isOutside?: boolean;
   crewCount: number;
   crewAvgWeightKg?: number | null;
@@ -61,13 +62,17 @@ export function validateBooking(input: BookingInput): ValidationError[] {
     });
   }
 
-  // 3. Private boat check — must be owner
-  if (input.boatCategory === "private" && input.boatOwnerUserId !== input.userId) {
-    errors.push({
-      field: "boat",
-      message:
-        "Private boats are for exclusive use by the owner or by arrangement with the owner.",
-    });
+  // 3. Private boat check — must be owner or have explicit access
+  if (input.boatCategory === "private") {
+    const isOwner = input.boatOwnerUserId === input.userId;
+    const hasAccess = input.privateBoatAccessUserIds?.includes(input.userId) ?? false;
+    if (!isOwner && !hasAccess && !isPrivilegedRole) {
+      errors.push({
+        field: "boat",
+        message:
+          "Private boats are for exclusive use by the owner or approved users. Contact the boat owner or admin for access.",
+      });
+    }
   }
 
   // 4. Crew count check

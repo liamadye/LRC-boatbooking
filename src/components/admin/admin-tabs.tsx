@@ -79,7 +79,7 @@ export function AdminTabs({
       </TabsList>
 
       <TabsContent value="boats">
-        <BoatManagement boats={boats} squads={squads} />
+        <BoatManagement boats={boats} squads={squads} users={users.map((u) => ({ id: u.id, fullName: u.fullName, email: u.email }))} />
       </TabsContent>
 
       <TabsContent value="members">

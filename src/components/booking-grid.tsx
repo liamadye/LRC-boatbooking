@@ -208,30 +208,32 @@ export function BookingGrid({
       )}
       <TotalsBar inShed={totals.inShed} rowing={totals.rowing} />
 
-      {/* Mobile view */}
-      <MobileBookingView
-        boats={boats}
-        equipment={equipment}
-        oarSets={oarSets}
-        dayBookings={dayBookings}
-        selectedDate={selectedDate}
-        user={user}
-        boatMap={boatMap}
-        equipMap={equipMap}
-        oarMap={oarMap}
-        onBookingClick={(booking) => setSelectedBooking(booking)}
-        onSlotClick={(type, id, name, slot) =>
-          setBookingTarget({ resourceType: type, resourceId: id, resourceName: name, slot })
-        }
-      />
+      {/* Mobile view — only shown when there are boats */}
+      {boats.length > 0 && (
+        <MobileBookingView
+          boats={boats}
+          equipment={equipment}
+          oarSets={oarSets}
+          dayBookings={dayBookings}
+          selectedDate={selectedDate}
+          user={user}
+          boatMap={boatMap}
+          equipMap={equipMap}
+          oarMap={oarMap}
+          onBookingClick={(booking) => setSelectedBooking(booking)}
+          onSlotClick={(type, id, name, slot) =>
+            setBookingTarget({ resourceType: type, resourceId: id, resourceName: name, slot })
+          }
+        />
+      )}
 
-      {/* Desktop view */}
-      <div className="overflow-x-auto rounded-lg border bg-white hidden md:block">
+      {/* Desktop view (always visible on mobile for equipment-only/gym tab) */}
+      <div className={cn("overflow-x-auto rounded-lg border bg-white", boats.length > 0 && "hidden md:block")}>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-gray-50">
               <th scope="col" className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left font-medium w-48">
-                Boat
+                {boats.length > 0 ? "Boat" : "Equipment"}
               </th>
               <th scope="col" className="px-2 py-2 text-left font-medium w-20">Type</th>
               <th scope="col" className="px-2 py-2 text-left font-medium w-16">Wt</th>
@@ -281,7 +283,7 @@ export function BookingGrid({
             })}
 
             {/* Oar Sets */}
-            <SectionGroup>
+            {oarSets.length > 0 && <SectionGroup>
               <SectionHeader
                 label="Oar Sets"
                 count={oarSets.length}
@@ -302,10 +304,10 @@ export function BookingGrid({
                     currentUserId={user.id}
                   />
                 ))}
-            </SectionGroup>
+            </SectionGroup>}
 
             {/* Private Boats */}
-            <SectionGroup>
+            {privateBoats.length > 0 && <SectionGroup>
               <SectionHeader
                 label="Private Boats"
                 count={privateBoats.length}
@@ -324,10 +326,10 @@ export function BookingGrid({
                     currentUserId={user.id}
                   />
                 ))}
-            </SectionGroup>
+            </SectionGroup>}
 
             {/* Tinnies */}
-            <SectionGroup>
+            {tinnies.length > 0 && <SectionGroup>
               <SectionHeader
                 label="Tinnies (Coach Boats)"
                 count={tinnies.length}
@@ -346,10 +348,10 @@ export function BookingGrid({
                     currentUserId={user.id}
                   />
                 ))}
-            </SectionGroup>
+            </SectionGroup>}
 
             {/* Equipment */}
-            <SectionGroup>
+            {equipment.length > 0 && <SectionGroup>
               <SectionHeader
                 label="Ergs, Bikes & Gym"
                 count={equipment.length}
@@ -398,7 +400,7 @@ export function BookingGrid({
                   ))}
                 </>
               )}
-            </SectionGroup>
+            </SectionGroup>}
           </tbody>
         </table>
       </div>

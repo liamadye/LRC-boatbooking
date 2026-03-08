@@ -60,6 +60,13 @@ export function BookingModal({
 
   const isEditing = !!editingBooking;
   const boat = boats.find((b) => b.id === target.resourceId);
+
+  // Determine if this boat type supports both coxed and uncoxed configurations
+  // e.g. "4x/4-/4+" supports coxed (5 crew) and uncoxed (4 crew)
+  const hasCoxOption = !!boat && boat.boatType.includes("+") && boat.boatType.includes("/");
+  const coxedCrew = boat ? (MAX_CREW[boat.boatType] ?? 1) : 1;
+  const uncoxedCrew = hasCoxOption ? coxedCrew - 1 : coxedCrew;
+
   const maxCrew = boat ? (MAX_CREW[boat.boatType] ?? 1) : 1;
   const canBookAsSquad =
     target.resourceType === "boat" &&
@@ -82,6 +89,12 @@ export function BookingModal({
   const [selectedSquadId, setSelectedSquadId] = useState<string>(
     matchingSquad?.id ?? user.squads[0]?.id ?? ""
   );
+  const [isCoxed, setIsCoxed] = useState(
+    hasCoxOption
+      ? (editingBooking ? editingBooking.crewCount === coxedCrew : true)
+      : true
+  );
+  const effectiveCrew = hasCoxOption ? (isCoxed ? coxedCrew : uncoxedCrew) : maxCrew;
   const [endSlot, setEndSlot] = useState(editingBooking?.endSlot ?? target.slot);
   const [isRaceSpecific, setIsRaceSpecific] = useState(editingBooking?.isRaceSpecific ?? false);
   const [raceDetails, setRaceDetails] = useState(editingBooking?.raceDetails ?? "");
@@ -187,7 +200,7 @@ export function BookingModal({
       userId: user.id,
       squadId: payload.squadId,
       bookerName: payload.bookerName,
-      crewCount: maxCrew,
+      crewCount: effectiveCrew,
       startSlot: target.slot,
       endSlot: payload.endSlot,
       isRaceSpecific: payload.isRaceSpecific,
@@ -218,7 +231,7 @@ export function BookingModal({
           date: selectedDate,
           resourceType: target.resourceType,
           resourceId: target.resourceId,
-          crewCount: maxCrew,
+          crewCount: effectiveCrew,
           startSlot: target.slot,
           ...payload,
         }),
@@ -392,8 +405,22 @@ export function BookingModal({
           )}
 
           {target.resourceType === "boat" && boat && (
-            <div className="text-sm text-muted-foreground">
-              Crew: {maxCrew}{maxCrew > 1 && boat.boatType.includes("+") ? ` (${maxCrew - 1} + cox)` : ""}
+            <div className="space-y-2">
+              {hasCoxOption && (
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="coxed"
+                    checked={isCoxed}
+                    onCheckedChange={(checked) => setIsCoxed(checked === true)}
+                  />
+                  <Label htmlFor="coxed" className="text-sm">
+                    Coxed (+1 cox)
+                  </Label>
+                </div>
+              )}
+              <div className="text-sm text-muted-foreground">
+                Crew: {effectiveCrew}{isCoxed && boat.boatType.includes("+") ? ` (${effectiveCrew - 1} + cox)` : ""}
+              </div>
             </div>
           )}
 

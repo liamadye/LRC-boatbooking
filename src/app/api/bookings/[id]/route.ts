@@ -112,7 +112,7 @@ export async function PATCH(
   if (booking.boatId) {
     // Parallel: boat + consecutive count are independent
     const [boat, consecutiveBookings] = await Promise.all([
-      prisma.boat.findUnique({ where: { id: booking.boatId } }),
+      prisma.boat.findUnique({ where: { id: booking.boatId }, include: { privateBoatAccess: { select: { userId: true } } } }),
       prisma.booking.count({
         where: {
           boatId: booking.boatId,
@@ -152,6 +152,7 @@ export async function PATCH(
         boatStatus: boat.status as "available" | "not_in_use",
         boatAvgWeightKg: boat.avgWeightKg ? Number(boat.avgWeightKg) : null,
         boatOwnerUserId: boat.ownerUserId,
+        privateBoatAccessUserIds: (boat as { privateBoatAccess?: { userId: string }[] }).privateBoatAccess?.map((a) => a.userId) ?? [],
         isOutside: boat.isOutside,
         crewCount: newCrewCount,
         crewAvgWeightKg: user.weightKg ? Number(user.weightKg) : null,

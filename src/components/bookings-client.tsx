@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { addDays, format, parseISO } from "date-fns";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WeekNav } from "@/components/week-nav";
 import { BookingGrid } from "@/components/booking-grid";
 import { useToast } from "@/hooks/use-toast";
@@ -289,21 +290,48 @@ export function BookingsClient({
         loading={loadingWeek}
       />
 
-      <BookingGrid
-        boats={boats}
-        equipment={equipment}
-        oarSets={oarSets}
-        bookings={visibleBookings}
-        selectedDate={selectedDate}
-        user={user}
-        loadedAt={loadedAt}
-        onRefresh={refreshCurrentWeek}
-        refreshing={loadingWeek}
-        onBookingPending={handleBookingPending}
-        onPendingBookingResolved={handlePendingBookingResolved}
-        onBookingSaved={handleBookingSaved}
-        onBookingDeleted={handleBookingDeleted}
-      />
+      <Tabs defaultValue="boats">
+        <TabsList>
+          <TabsTrigger value="boats">Boats & Oars</TabsTrigger>
+          <TabsTrigger value="gym">Gym & Equipment</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="boats">
+          <BookingGrid
+            boats={boats}
+            equipment={[]}
+            oarSets={oarSets}
+            bookings={visibleBookings}
+            selectedDate={selectedDate}
+            user={user}
+            loadedAt={loadedAt}
+            onRefresh={refreshCurrentWeek}
+            refreshing={loadingWeek}
+            onBookingPending={handleBookingPending}
+            onPendingBookingResolved={handlePendingBookingResolved}
+            onBookingSaved={handleBookingSaved}
+            onBookingDeleted={handleBookingDeleted}
+          />
+        </TabsContent>
+
+        <TabsContent value="gym">
+          <BookingGrid
+            boats={[]}
+            equipment={equipment}
+            oarSets={[]}
+            bookings={visibleBookings}
+            selectedDate={selectedDate}
+            user={user}
+            loadedAt={loadedAt}
+            onRefresh={refreshCurrentWeek}
+            refreshing={loadingWeek}
+            onBookingPending={handleBookingPending}
+            onPendingBookingResolved={handlePendingBookingResolved}
+            onBookingSaved={handleBookingSaved}
+            onBookingDeleted={handleBookingDeleted}
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

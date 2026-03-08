@@ -90,6 +90,7 @@ model User {
   squads               UserSquad[]
   ownedBoats           Boat[]                 @relation("BoatOwner")
   bookings             Booking[]
+  privateBoatAccess    PrivateBoatAccess[]
   blackBoatApplications BlackBoatApplication[] @relation("Applicant")
   reviewedApplications  BlackBoatApplication[] @relation("Reviewer")
   sentInvitations      Invitation[]           @relation("Inviter")
@@ -128,11 +129,25 @@ model Boat {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  responsibleSquad Squad? @relation(fields: [responsibleSquadId], references: [id])
-  owner            User?  @relation("BoatOwner", fields: [ownerUserId], references: [id])
-  bookings         Booking[]
+  responsibleSquad   Squad?              @relation(fields: [responsibleSquadId], references: [id])
+  owner              User?               @relation("BoatOwner", fields: [ownerUserId], references: [id])
+  bookings           Booking[]
+  privateBoatAccess  PrivateBoatAccess[]
 
   @@map("boats")
+}
+
+// ─── Private Boat Access ────────────────────────────────────────
+
+model PrivateBoatAccess {
+  boatId String @map("boat_id")
+  userId String @map("user_id")
+
+  boat Boat @relation(fields: [boatId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([boatId, userId])
+  @@map("private_boat_access")
 }
 
 // ─── Equipment ──────────────────────────────────────────────────
