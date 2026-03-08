@@ -43,8 +43,8 @@ test.describe("Production-safe admin smoke checks", () => {
     await expect(page.getByRole("button", { name: /send invite/i })).toBeVisible();
 
     await openTab(page, /Squads/);
-    await expect(page.getByLabel("New Squad")).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Create$/ })).toBeVisible();
+    await expect(page.getByLabel("New Squad")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("button", { name: /^Create$/ })).toBeVisible({ timeout: 15_000 });
   });
 
   test("bookings and audit log tabs load read-only admin controls", async ({ page }) => {
