@@ -43,11 +43,12 @@ export function AppNav({ userEmail, userRole }: { userEmail: string; userRole: s
             <span className="hidden sm:inline">Boat Booking</span>
           </Link>
           {/* Desktop nav */}
-          <nav className="hidden sm:flex items-center gap-1">
+          <nav className="hidden sm:flex items-center gap-1" aria-label="Main navigation">
             {visibleLinks.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
+                aria-current={pathname.startsWith(link.href) ? "page" : undefined}
                 className={cn(
                   "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
                   pathname.startsWith(link.href)
@@ -81,12 +82,13 @@ export function AppNav({ userEmail, userRole }: { userEmail: string; userRole: s
 
       {/* Mobile menu */}
       {mobileOpen && (
-        <nav className="sm:hidden border-t bg-white px-4 py-2 space-y-1">
+        <nav className="sm:hidden border-t bg-white px-4 py-2 space-y-1" aria-label="Mobile navigation">
           {visibleLinks.map((link) => (
             <Link
               key={link.href}
               href={link.href}
               onClick={() => setMobileOpen(false)}
+              aria-current={pathname.startsWith(link.href) ? "page" : undefined}
               className={cn(
                 "block px-3 py-2.5 rounded-md text-sm font-medium transition-colors",
                 pathname.startsWith(link.href)
