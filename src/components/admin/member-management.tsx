@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Trash2 } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
 
 type AdminUser = {
   id: string;
@@ -15,6 +16,7 @@ type AdminUser = {
   memberType: string;
   weightKg: number | null;
   hasBlackBoatEligibility: boolean;
+  lastSignInAt: string | null;
   squads: { id: string; name: string }[];
 };
 
@@ -94,6 +96,11 @@ export function MemberManagement({
                 </div>
                 <div className="text-xs text-muted-foreground truncate mt-0.5">
                   {user.email}
+                  {user.lastSignInAt && (
+                    <span className="ml-2">
+                      · Last login {formatDistanceToNow(new Date(user.lastSignInAt), { addSuffix: true })}
+                    </span>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-1 mt-1">
                   <Badge variant="outline" className="text-[10px]">

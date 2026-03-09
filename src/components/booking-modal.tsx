@@ -19,7 +19,7 @@ import {
   getDefaultStartMinutes,
   parseDaytimeTime,
 } from "@/lib/booking-times";
-import { supportsSquadBooking } from "@/lib/booking-utils";
+import { can } from "@/lib/permissions";
 import { useToast } from "@/hooks/use-toast";
 import type { BoatWithRelations, SerializedBooking, UserProfile } from "@/lib/types";
 
@@ -77,11 +77,7 @@ export function BookingModal({
   const uncoxedCrew = hasCoxOption ? coxedCrew - 1 : coxedCrew;
 
   const maxCrew = boat ? (MAX_CREW[boat.boatType] ?? 1) : 1;
-  const canBookAsSquad =
-    target.resourceType === "boat" &&
-    !!boat &&
-    user.squads.length > 0 &&
-    supportsSquadBooking(boat.boatType);
+  const canBookAsSquad = user.squads.length > 0;
   const matchingSquad = canBookAsSquad
     ? user.squads.find((s) => s.id === editingBooking?.squadId)
     : null;

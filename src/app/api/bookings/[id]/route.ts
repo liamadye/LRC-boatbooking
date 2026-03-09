@@ -5,7 +5,7 @@ import { validateBooking, isWeekend } from "@/lib/validation";
 import { bookingsOverlap, getDefaultEndMinutes, getDefaultStartMinutes } from "@/lib/booking-times";
 import { can } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
-import { serializeBooking, supportsSquadBooking } from "@/lib/booking-utils";
+import { serializeBooking } from "@/lib/booking-utils";
 
 export async function DELETE(
   request: NextRequest,
@@ -141,14 +141,16 @@ export async function PATCH(
 
     if (boat) {
       if (nextSquadId) {
-        if (!supportsSquadBooking(boat.boatType)) {
-          return NextResponse.json(
-            { error: "Squad bookings are only available for 4s and 8s." },
-            { status: 400 }
-          );
+        bookingSquad = user.squads.find((entry) => entry.squad.id === nextSquadId)?.squad ?? null;
+
+        // Admins can book for any squad
+        if (!bookingSquad && user.role === "admin") {
+          bookingSquad = await prisma.squad.findUnique({
+            where: { id: nextSquadId },
+            select: { id: true, name: true },
+          });
         }
 
-        bookingSquad = user.squads.find((entry) => entry.squad.id === nextSquadId)?.squad ?? null;
         if (!bookingSquad) {
           return NextResponse.json(
             { error: "You can only book on behalf of a squad you belong to." },
