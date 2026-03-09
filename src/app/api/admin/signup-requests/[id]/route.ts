@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requirePermission } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { normalizeInvitationSquads } from "@/lib/admin-invitations";
+import { sendSignupApprovalEmail } from "@/lib/invite-email";
 import {
   finalizeSignupRequestApproval,
   markSignupRequestReviewed,
@@ -48,6 +49,23 @@ export async function PATCH(
         reviewedBy: admin.id,
       });
 
+      const loginUrl = `${request.nextUrl.origin}/login`;
+      let approvalEmailSent = false;
+      let approvalEmailConfigured = false;
+      let approvalEmailError: string | null = null;
+
+      try {
+        const emailResult = await sendSignupApprovalEmail({
+          to: signupRequest.email,
+          loginUrl,
+        });
+        approvalEmailSent = emailResult.sent;
+        approvalEmailConfigured = emailResult.sent || emailResult.reason !== "not_configured";
+      } catch (error) {
+        approvalEmailConfigured = true;
+        approvalEmailError = error instanceof Error ? error.message : "Failed to send approval email.";
+      }
+
       await logAudit({
         userId: admin.id,
         action: "signup_request.approve",
@@ -59,6 +77,9 @@ export async function PATCH(
           role: user.role,
           memberType: user.memberType,
           squadIds,
+          approvalEmailSent,
+          approvalEmailConfigured,
+          approvalEmailError,
         },
       });
 
@@ -70,6 +91,9 @@ export async function PATCH(
           fullName: user.fullName,
         },
         request: serializeSignupRequest(signupRequest),
+        approvalEmailSent,
+        approvalEmailConfigured,
+        approvalEmailError,
       });
     } catch (error) {
       return NextResponse.json(

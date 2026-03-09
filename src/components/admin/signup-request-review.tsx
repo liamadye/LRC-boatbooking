@@ -115,7 +115,13 @@ export function SignupRequestReview({
       title: status === "approved" ? "Signup approved" : "Signup denied",
       description:
         status === "approved"
-          ? "The Google account can now access the portal."
+          ? data.approvalEmailSent
+            ? "The Google account can now access the portal. An approval email was sent."
+            : data.approvalEmailConfigured === false
+              ? "The Google account can now access the portal. Approval email is not configured."
+              : data.approvalEmailError
+                ? `The Google account can now access the portal, but the approval email failed: ${data.approvalEmailError}`
+                : "The Google account can now access the portal."
           : "The request has been denied.",
     });
     setActionId(null);
