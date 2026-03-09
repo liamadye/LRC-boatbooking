@@ -19,7 +19,7 @@ import {
   getDefaultStartMinutes,
   parseDaytimeTime,
 } from "@/lib/booking-times";
-import { can } from "@/lib/permissions";
+
 import { useToast } from "@/hooks/use-toast";
 import type { BoatWithRelations, SerializedBooking, UserProfile } from "@/lib/types";
 
