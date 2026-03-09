@@ -38,6 +38,30 @@ type InviteDialogState = {
   deliveryMode?: "manual_action_link" | "manual_register_link";
 };
 
+/** Copy text to clipboard with fallback for mobile Safari (which blocks
+ *  async clipboard writes outside of the original user-gesture stack). */
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Fallback: use a hidden textarea + execCommand
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    let ok = false;
+    try {
+      ok = document.execCommand("copy");
+    } catch { /* ignore */ }
+    document.body.removeChild(textarea);
+    return ok;
+  }
+}
+
 export function InviteManagement({
   invitations,
   signupRequests,
@@ -560,8 +584,11 @@ export function InviteManagement({
                 if (!inviteDialog?.inviteUrl) {
                   return;
                 }
-                await navigator.clipboard.writeText(inviteDialog.inviteUrl);
-                toast({ title: "Link copied to clipboard" });
+                const copied = await copyToClipboard(inviteDialog.inviteUrl);
+                toast({
+                  title: copied ? "Link copied to clipboard" : "Could not copy automatically",
+                  description: copied ? undefined : "Select and copy the link from the input above.",
+                });
               }}
             >
               <Copy className="h-4 w-4" />

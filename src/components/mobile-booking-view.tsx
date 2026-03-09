@@ -257,7 +257,7 @@ export function MobileBookingView({
       )}
 
       {/* Horizontal scroll grid — same layout as desktop */}
-      <div className="overflow-x-auto rounded-lg border bg-white">
+      <div className="overflow-auto rounded-lg border bg-white max-h-[calc(100dvh-320px)]">
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-20">
             <tr className="border-b bg-gray-50">

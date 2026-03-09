@@ -215,7 +215,7 @@ export function BookingGrid({
       />
 
       {/* Desktop view */}
-      <div className="overflow-x-auto rounded-lg border bg-white hidden md:block">
+      <div className="overflow-auto rounded-lg border bg-white hidden md:block max-h-[calc(100dvh-260px)]">
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-20">
             <tr className="border-b bg-gray-50">
