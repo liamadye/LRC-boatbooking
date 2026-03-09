@@ -37,9 +37,6 @@ export function TotalsBar({
               <td className="sticky left-0 z-10 bg-orange-50 px-3 py-1.5 font-semibold w-48">
                 TOTAL IN SHED
               </td>
-              <td className="w-20" />
-              <td className="w-16" />
-              <td className="w-28" />
               {TIME_SLOTS.map((ts) => (
                 <td
                   key={ts.slot}
@@ -63,9 +60,6 @@ export function TotalsBar({
               <td className="sticky left-0 z-10 bg-blue-50 px-3 py-1.5 font-semibold w-48">
                 TOTAL ROWING
               </td>
-              <td className="w-20" />
-              <td className="w-16" />
-              <td className="w-28" />
               {TIME_SLOTS.map((ts) => (
                 <td
                   key={ts.slot}

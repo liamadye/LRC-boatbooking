@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import { TIME_SLOTS, MAX_CREW, BOAT_SECTIONS } from "@/lib/constants";
+import { TIME_SLOTS, BOAT_SECTIONS } from "@/lib/constants";
 import { getBookingDisplayName } from "@/lib/booking-utils";
-import { Circle, Lock, ChevronDown, ChevronRight, Filter, Loader2 } from "lucide-react";
+import { Circle, Lock, Filter, ChevronDown, ChevronRight, Ban, Loader2 } from "lucide-react";
 import type {
   BoatWithRelations,
   EquipmentItem,
@@ -12,6 +12,8 @@ import type {
   SerializedBooking,
   UserProfile,
 } from "@/lib/types";
+
+type TabType = "shells" | "tinnies" | "oars" | "gym";
 
 type MobileFilters = {
   boatType: "all" | "8+" | "4s" | "2s" | "1x";
@@ -35,6 +37,7 @@ const BOAT_TYPE_MATCH: Record<string, string[]> = {
 };
 
 type Props = {
+  tab: TabType;
   boats: BoatWithRelations[];
   equipment: EquipmentItem[];
   oarSets: OarSetItem[];
@@ -49,12 +52,12 @@ type Props = {
 };
 
 export function MobileBookingView({
+  tab,
   boats,
+  equipment,
+  oarSets,
   dayBookings,
   user,
-  boatMap,
-  equipMap,
-  oarMap,
   onBookingClick,
   onSlotClick,
 }: Props) {
@@ -64,379 +67,339 @@ export function MobileBookingView({
     availability: "all",
   });
   const [showFilters, setShowFilters] = useState(false);
-  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
 
-  const activeFilterCount = [
+  const showFilterBar = tab === "shells";
+
+  const activeFilterCount = showFilterBar ? [
     filters.boatType !== "all",
     filters.classification !== "all",
     filters.availability !== "all",
-  ].filter(Boolean).length;
+  ].filter(Boolean).length : 0;
 
-  const availableBoats = useMemo(
-    () => boats.filter((b) => b.status === "available"),
-    [boats]
-  );
+  // Build resource rows based on tab
+  type ResourceRow = {
+    id: string;
+    name: string;
+    resourceType: "boat" | "equipment" | "oar_set";
+    boatType?: string;
+    classification?: string;
+    category?: string;
+    status?: string;
+    isOutside?: boolean;
+    subtitle?: string;
+  };
 
-  function matchesTypeFilter(boatType: string) {
-    if (filters.boatType === "all") return true;
-    const types = BOAT_TYPE_MATCH[filters.boatType] ?? [];
-    return types.includes(boatType);
-  }
-
-  function matchesClassFilter(boat: BoatWithRelations) {
-    if (filters.classification === "all") return true;
-    return boat.classification === filters.classification;
-  }
-
-  const slotBookings = useMemo(() => {
-    const slots: Record<number, SerializedBooking[]> = {};
-    for (const ts of TIME_SLOTS) {
-      slots[ts.slot] = [];
+  const resourceRows = useMemo((): ResourceRow[] => {
+    if (tab === "shells") {
+      // Group by section like desktop
+      const rows: ResourceRow[] = [];
+      const clubBoats = boats.filter((b) => b.category === "club");
+      for (const section of BOAT_SECTIONS) {
+        const sectionBoats = clubBoats.filter((b) => section.types.includes(b.boatType));
+        rows.push(...sectionBoats.map((b) => ({
+          id: b.id,
+          name: b.name,
+          resourceType: "boat" as const,
+          boatType: b.boatType,
+          classification: b.classification,
+          category: b.category,
+          status: b.status,
+          isOutside: b.isOutside,
+        })));
+      }
+      const privateBoats = boats.filter((b) => b.category === "private");
+      rows.push(...privateBoats.map((b) => ({
+        id: b.id,
+        name: b.name,
+        resourceType: "boat" as const,
+        boatType: b.boatType,
+        classification: b.classification,
+        category: b.category,
+        status: b.status,
+        isOutside: b.isOutside,
+      })));
+      return rows;
     }
-    for (const booking of dayBookings) {
-      for (let slot = booking.startSlot; slot <= booking.endSlot; slot += 1) {
-        slots[slot].push(booking);
+    if (tab === "tinnies") {
+      return boats.map((b) => ({
+        id: b.id,
+        name: b.name,
+        resourceType: "boat" as const,
+        boatType: b.boatType,
+        category: b.category,
+        status: b.status,
+      }));
+    }
+    if (tab === "oars") {
+      return oarSets.map((os) => ({
+        id: os.id,
+        name: os.name,
+        resourceType: "oar_set" as const,
+      }));
+    }
+    // gym
+    const ergs = equipment.filter((e) => e.type === "erg").map((e) => ({
+      id: e.id,
+      name: `Erg ${e.number}`,
+      resourceType: "equipment" as const,
+      subtitle: "ONE SLOT ONLY",
+    }));
+    const bikes = equipment.filter((e) => e.type === "bike").map((e) => ({
+      id: e.id,
+      name: `Bike ${e.number}`,
+      resourceType: "equipment" as const,
+    }));
+    const gyms = equipment.filter((e) => e.type === "gym").map((e) => ({
+      id: e.id,
+      name: `Gym ${e.number}`,
+      resourceType: "equipment" as const,
+    }));
+    return [...ergs, ...bikes, ...gyms];
+  }, [tab, boats, equipment, oarSets]);
+
+  // Apply filters (shells tab only)
+  const filteredRows = useMemo(() => {
+    if (!showFilterBar) return resourceRows;
+    return resourceRows.filter((row) => {
+      if (filters.boatType !== "all") {
+        const types = BOAT_TYPE_MATCH[filters.boatType] ?? [];
+        if (!row.boatType || !types.includes(row.boatType)) return false;
+      }
+      if (filters.classification !== "all") {
+        if (row.classification !== filters.classification) return false;
+      }
+      if (row.status === "not_in_use" && filters.availability === "available") return false;
+      return true;
+    });
+  }, [resourceRows, filters, showFilterBar]);
+
+  // Index bookings by resource
+  const bookingIndex = useMemo(() => {
+    const idx: Record<string, Record<number, SerializedBooking>> = {};
+    for (const b of dayBookings) {
+      const key = b.boatId ?? b.equipmentId ?? b.oarSetId ?? "";
+      if (!idx[key]) idx[key] = {};
+      for (let s = b.startSlot; s <= b.endSlot; s++) {
+        idx[key][s] = b;
       }
     }
-    return slots;
+    return idx;
   }, [dayBookings]);
 
-  const availableBySlot = useMemo(() => {
-    const slots: Record<number, BoatWithRelations[]> = {};
-    for (const ts of TIME_SLOTS) {
-      const bookedResourceIds = new Set(
-        (slotBookings[ts.slot] ?? []).map(
-          (booking) => booking.boatId ?? booking.equipmentId ?? booking.oarSetId
-        )
-      );
-      slots[ts.slot] = availableBoats.filter(
-        (boat) =>
-          !bookedResourceIds.has(boat.id) &&
-          matchesTypeFilter(boat.boatType) &&
-          matchesClassFilter(boat)
-      );
-    }
-    return slots;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [availableBoats, slotBookings, filters.boatType, filters.classification]);
-
-  // Filter booked items too
-  const filteredSlotBookings = useMemo(() => {
-    if (filters.boatType === "all" && filters.classification === "all" && filters.availability === "all") {
-      return slotBookings;
-    }
-    const filtered: Record<number, SerializedBooking[]> = {};
-    for (const ts of TIME_SLOTS) {
-      filtered[ts.slot] = (slotBookings[ts.slot] ?? []).filter((booking) => {
-        if (filters.availability === "available") return false; // hide booked when "available" filter
-        const boat = boatMap.get(booking.boatId ?? "");
-        if (!boat) return true; // show non-boat bookings always
-        if (!matchesTypeFilter(boat.boatType)) return false;
-        if (!matchesClassFilter(boat)) return false;
-        return true;
-      });
-    }
-    return filtered;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slotBookings, boatMap, filters.boatType, filters.classification, filters.availability]);
-
-  // Group available boats by category
-  function groupByCategory(boatList: BoatWithRelations[]) {
-    const groups: { label: string; boats: BoatWithRelations[] }[] = [];
-    for (const section of BOAT_SECTIONS) {
-      const matching = boatList.filter((b) =>
-        b.category === "club" && section.types.includes(b.boatType)
-      );
-      if (matching.length > 0) {
-        groups.push({ label: section.label, boats: matching });
-      }
-    }
-    // Other club boats not in any section
-    const allSectionTypes = BOAT_SECTIONS.flatMap((s) => s.types);
-    const other = boatList.filter(
-      (b) => b.category === "club" && !allSectionTypes.includes(b.boatType)
-    );
-    if (other.length > 0) {
-      groups.push({ label: "Other", boats: other });
-    }
-    // Private boats
-    const privateBoats = boatList.filter((b) => b.category === "private");
-    if (privateBoats.length > 0) {
-      groups.push({ label: "Private Boats", boats: privateBoats });
-    }
-    // Tinnies
-    const tinnies = boatList.filter((b) => b.category === "tinny");
-    if (tinnies.length > 0) {
-      groups.push({ label: "Coach Boats", boats: tinnies });
-    }
-    return groups;
-  }
-
-  function toggleCategory(key: string) {
-    setCollapsedCategories((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+  function getBooking(resourceId: string, slot: number): SerializedBooking | undefined {
+    return bookingIndex[resourceId]?.[slot];
   }
 
   return (
-    <div className="space-y-3 md:hidden">
-      {/* Filter toggle */}
-      <button
-        onClick={() => setShowFilters(!showFilters)}
-        aria-expanded={showFilters}
-        aria-label={`Toggle filters${activeFilterCount > 0 ? ` (${activeFilterCount} active)` : ""}`}
-        className={cn(
-          "w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm min-h-[44px]",
-          activeFilterCount > 0 ? "bg-blue-50 border-blue-200" : "bg-white"
-        )}
-      >
-        <span className="flex items-center gap-2">
-          <Filter className="h-5 w-5" />
-          Filters
-          {activeFilterCount > 0 && (
-            <span className="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded-full">
-              {activeFilterCount}
+    <div className="space-y-4 md:hidden">
+      {/* Filter bar (shells tab only) */}
+      {showFilterBar && (
+        <>
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            aria-expanded={showFilters}
+            aria-label={`Toggle filters${activeFilterCount > 0 ? ` (${activeFilterCount} active)` : ""}`}
+            className={cn(
+              "w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm min-h-[44px]",
+              activeFilterCount > 0 ? "bg-blue-50 border-blue-200" : "bg-white"
+            )}
+          >
+            <span className="flex items-center gap-2">
+              <Filter className="h-5 w-5" />
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+                  {activeFilterCount}
+                </span>
+              )}
             </span>
-          )}
-        </span>
-        {showFilters ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-      </button>
+            {showFilters ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+          </button>
 
-      {showFilters && (
-        <div className="rounded-lg border bg-white p-3 space-y-3">
-          {/* Boat type pills */}
-          <div>
-            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-              Boat Type
-            </label>
-            <div className="flex gap-1.5 mt-1">
-              {BOAT_TYPE_FILTERS.map((f) => (
+          {showFilters && (
+            <div className="rounded-lg border bg-white p-3 space-y-3">
+              <div>
+                <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  Boat Type
+                </label>
+                <div className="flex gap-1.5 mt-1">
+                  {BOAT_TYPE_FILTERS.map((f) => (
+                    <button
+                      key={f.value}
+                      onClick={() => setFilters((prev) => ({ ...prev, boatType: f.value as MobileFilters["boatType"] }))}
+                      className={cn(
+                        "px-3 py-2 rounded-full text-sm font-medium border transition-colors min-h-[44px]",
+                        filters.boatType === f.value
+                          ? "bg-blue-600 text-white border-blue-600"
+                          : "bg-white text-gray-600 border-gray-200"
+                      )}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                    Classification
+                  </label>
+                  <select
+                    className="mt-1 w-full text-base border rounded px-2 py-2 min-h-[44px]"
+                    value={filters.classification}
+                    onChange={(e) =>
+                      setFilters((prev) => ({
+                        ...prev,
+                        classification: e.target.value as MobileFilters["classification"],
+                      }))
+                    }
+                  >
+                    <option value="all">All boats</option>
+                    <option value="green">Green (open)</option>
+                    <option value="black">Black (restricted)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                    Availability
+                  </label>
+                  <select
+                    className="mt-1 w-full text-base border rounded px-2 py-2 min-h-[44px]"
+                    value={filters.availability}
+                    onChange={(e) =>
+                      setFilters((prev) => ({
+                        ...prev,
+                        availability: e.target.value as MobileFilters["availability"],
+                      }))
+                    }
+                  >
+                    <option value="all">All</option>
+                    <option value="available">Available only</option>
+                  </select>
+                </div>
+              </div>
+
+              {activeFilterCount > 0 && (
                 <button
-                  key={f.value}
-                  onClick={() => setFilters((prev) => ({ ...prev, boatType: f.value as MobileFilters["boatType"] }))}
-                  className={cn(
-                    "px-3 py-2 rounded-full text-sm font-medium border transition-colors min-h-[44px]",
-                    filters.boatType === f.value
-                      ? "bg-blue-600 text-white border-blue-600"
-                      : "bg-white text-gray-600 border-gray-200"
-                  )}
+                  onClick={() =>
+                    setFilters({ boatType: "all", classification: "all", availability: "all" })
+                  }
+                  className="text-xs text-blue-600 underline"
                 >
-                  {f.label}
+                  Clear filters
                 </button>
-              ))}
+              )}
             </div>
-          </div>
-
-          {/* Classification + Availability */}
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                Restriction
-              </label>
-              <select
-                className="mt-1 w-full text-base border rounded px-2 py-2 min-h-[44px]"
-                value={filters.classification}
-                onChange={(e) =>
-                  setFilters((prev) => ({
-                    ...prev,
-                    classification: e.target.value as MobileFilters["classification"],
-                  }))
-                }
-              >
-                <option value="all">All boats</option>
-                <option value="green">Green (open)</option>
-                <option value="black">Black (restricted)</option>
-              </select>
-            </div>
-            <div>
-              <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                Availability
-              </label>
-              <select
-                className="mt-1 w-full text-base border rounded px-2 py-2 min-h-[44px]"
-                value={filters.availability}
-                onChange={(e) =>
-                  setFilters((prev) => ({
-                    ...prev,
-                    availability: e.target.value as MobileFilters["availability"],
-                  }))
-                }
-              >
-                <option value="all">All</option>
-                <option value="available">Available only</option>
-              </select>
-            </div>
-          </div>
-
-          {activeFilterCount > 0 && (
-            <button
-              onClick={() =>
-                setFilters({ boatType: "all", classification: "all", availability: "all" })
-              }
-              className="text-xs text-blue-600 underline"
-            >
-              Clear filters
-            </button>
           )}
-        </div>
+        </>
       )}
 
-      {/* Time slots */}
-      {TIME_SLOTS.map((ts) => {
-        const bookingsForSlot = filteredSlotBookings[ts.slot] ?? [];
-        const availableForSlot = availableBySlot[ts.slot] ?? [];
-        const categoryGroups = groupByCategory(availableForSlot);
+      {/* Horizontal scroll grid — same layout as desktop */}
+      <div className="overflow-x-auto rounded-lg border bg-white">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b bg-gray-50">
+              <th scope="col" className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left font-medium min-w-[140px]">
+                {tab === "shells" ? "Boat" : tab === "tinnies" ? "Tinny" : tab === "oars" ? "Oar Set" : "Equipment"}
+              </th>
+              {TIME_SLOTS.map((ts) => (
+                <th
+                  scope="col"
+                  key={ts.slot}
+                  className="px-1.5 py-2 text-center font-medium min-w-[90px] text-xs"
+                >
+                  {ts.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filteredRows.map((row) => {
+              const isNotInUse = row.status === "not_in_use";
+              const isBlack = row.classification === "black";
+              const isPrivate = row.category === "private";
 
-        if (filters.availability === "available" && availableForSlot.length === 0) {
-          return null;
-        }
-
-        return (
-          <div key={ts.slot} className="rounded-lg border bg-white overflow-hidden">
-            <div className="bg-gray-50 px-3 py-2 font-semibold text-sm border-b flex items-center justify-between">
-              <span>{ts.label}</span>
-              <div className="flex items-center gap-2">
-                {bookingsForSlot.length > 0 && (
-                  <span className="text-xs text-muted-foreground font-normal">
-                    {bookingsForSlot.length} booked
-                  </span>
-                )}
-                {availableForSlot.length > 0 && (
-                  <span className="text-xs text-green-600 font-normal">
-                    {availableForSlot.length} free
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Booked items */}
-            {bookingsForSlot.length > 0 && (
-              <div className="divide-y">
-                {bookingsForSlot.map((booking) => {
-                  const boat = boatMap.get(booking.boatId ?? "");
-                  const equip = equipMap.get(booking.equipmentId ?? "");
-                  const oar = oarMap.get(booking.oarSetId ?? "");
-                  const resourceName = boat?.name ?? (equip ? `${equip.type} ${equip.number}` : oar?.name ?? "Unknown");
-                  const isOwn = booking.userId === user.id;
-                  const isPending = booking.clientStatus === "pending";
-
-                  return (
-                    <button
-                      key={booking.id}
-                      className={cn(
-                        "w-full px-3 py-2.5 text-left text-sm flex items-center justify-between active:bg-gray-100",
-                        isPending
-                          ? "bg-amber-50"
-                          : isOwn
-                            ? "bg-blue-50"
-                            : "bg-gray-50/50"
-                      )}
-                      onClick={() => {
-                        if (!isPending) {
-                          onBookingClick(booking);
-                        }
-                      }}
-                      disabled={isPending}
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        {isPending && (
-                          <Loader2 className="h-3 w-3 flex-shrink-0 animate-spin text-amber-700" />
-                        )}
-                        {boat && (
-                          <span className="flex-shrink-0">
-                            {boat.classification === "black" ? (
-                              <Circle className="h-3 w-3 fill-gray-800 text-gray-800" />
-                            ) : (
-                              <Circle className="h-3 w-3 fill-green-500 text-green-500" />
-                            )}
-                          </span>
-                        )}
-                        <span className="font-medium truncate">{resourceName}</span>
-                        {boat && (
-                          <span className="text-muted-foreground text-xs flex-shrink-0">{boat.boatType}</span>
-                        )}
-                      </div>
-                      <div className={cn(
-                        "text-xs px-2 py-0.5 rounded-full flex-shrink-0 ml-2",
-                        isPending
-                          ? "bg-amber-200 text-amber-900"
-                          : isOwn
-                            ? "bg-blue-200 text-blue-800"
-                            : "bg-gray-200 text-gray-700"
-                      )}>
-                        {getBookingDisplayName(booking)} ({booking.crewCount})
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Available boats grouped by category */}
-            {categoryGroups.length > 0 && (
-              <div className="border-t">
-                {categoryGroups.map((group) => {
-                  const categoryKey = `${ts.slot}:${group.label}`;
-                  const isCollapsed = collapsedCategories.has(categoryKey);
-
-                  return (
-                    <div key={group.label}>
-                      <button
-                        onClick={() => toggleCategory(categoryKey)}
-                        className="w-full px-3 py-2.5 text-left flex items-center justify-between bg-green-50/50 hover:bg-green-50 transition-colors border-t first:border-t-0 min-h-[44px]"
-                      >
-                        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                          {group.label} ({group.boats.length})
-                        </span>
-                        {isCollapsed ? (
-                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                        )}
-                      </button>
-                      {!isCollapsed && (
-                        <div className="divide-y">
-                          {group.boats.map((boat) => (
-                            <button
-                              key={boat.id}
-                              className="w-full px-3 py-2.5 text-left text-sm flex items-center justify-between active:bg-blue-50 transition-colors"
-                              onClick={() => onSlotClick("boat", boat.id, boat.name, ts.slot)}
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                {boat.classification === "black" ? (
-                                  <Circle className="h-3 w-3 fill-gray-800 text-gray-800" />
-                                ) : boat.category === "private" ? (
-                                  <Lock className="h-3 w-3 text-blue-500" />
-                                ) : (
-                                  <Circle className="h-3 w-3 fill-green-500 text-green-500" />
-                                )}
-                                <span className="font-medium truncate">{boat.name}</span>
-                                <span className="text-muted-foreground text-xs flex-shrink-0">{boat.boatType}</span>
-                              </div>
-                              <span className="text-xs text-muted-foreground flex-shrink-0">
-                                {MAX_CREW[boat.boatType] ?? 1} crew
-                              </span>
-                            </button>
-                          ))}
-                        </div>
+              return (
+                <tr key={row.id} className={cn("border-t", isNotInUse && "opacity-50")}>
+                  <td className="sticky left-0 z-10 bg-white px-3 py-1.5 font-medium">
+                    <div className="flex items-center gap-1.5">
+                      {isBlack && <Circle className="h-3 w-3 flex-shrink-0 fill-gray-800 text-gray-800" />}
+                      {!isBlack && !isPrivate && tab === "shells" && <Circle className="h-3 w-3 flex-shrink-0 fill-green-500 text-green-500" />}
+                      {isPrivate && <Lock className="h-3 w-3 flex-shrink-0 text-blue-500" />}
+                      {isNotInUse && <Ban className="h-3 w-3 flex-shrink-0 text-red-500" />}
+                      <span className="truncate max-w-[120px]">{row.name}</span>
+                      {row.subtitle && (
+                        <span className="text-[9px] text-muted-foreground">{row.subtitle}</span>
                       )}
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                  </td>
+                  {TIME_SLOTS.map((ts) => {
+                    const booking = getBooking(row.id, ts.slot);
 
-            {bookingsForSlot.length === 0 && availableForSlot.length === 0 && (
-              <div className="px-3 py-4 text-center text-sm text-muted-foreground">
-                No boats available
-              </div>
+                    if (isNotInUse) {
+                      return (
+                        <td key={ts.slot} className="px-1 py-1.5 text-center">
+                          <div className="h-8 rounded bg-red-50 flex items-center justify-center">
+                            <Ban className="h-3 w-3 text-red-300" />
+                          </div>
+                        </td>
+                      );
+                    }
+
+                    if (booking) {
+                      const isOwn = booking.userId === user.id;
+                      const isPending = booking.clientStatus === "pending";
+                      return (
+                        <td key={ts.slot} className="px-1 py-1.5 text-center">
+                          <button
+                            className={cn(
+                              "h-8 w-full rounded border flex items-center justify-center px-1 transition-colors",
+                              isPending
+                                ? "cursor-wait border-dashed bg-amber-50 border-amber-300"
+                                : isOwn
+                                  ? "bg-blue-100 border-blue-300 hover:bg-blue-200"
+                                  : "bg-gray-100 border-gray-200 hover:bg-gray-200",
+                              booking.isRaceSpecific && "ring-1 ring-amber-400"
+                            )}
+                            onClick={() => !isPending && onBookingClick(booking)}
+                            disabled={isPending}
+                          >
+                            {isPending && <Loader2 className="mr-1 h-3 w-3 animate-spin text-amber-700" />}
+                            <span className={cn(
+                              "text-[10px] font-medium truncate",
+                              isPending ? "text-amber-800" : isOwn ? "text-blue-800" : "text-gray-700"
+                            )}>
+                              {getBookingDisplayName(booking)} ({booking.crewCount})
+                            </span>
+                          </button>
+                        </td>
+                      );
+                    }
+
+                    return (
+                      <td key={ts.slot} className="px-1 py-1.5 text-center">
+                        <button
+                          className="h-8 w-full rounded border border-dashed border-gray-200 hover:border-blue-400 hover:bg-blue-50/50 transition-colors"
+                          onClick={() => onSlotClick(row.resourceType, row.id, row.name, ts.slot)}
+                          aria-label="Book this slot"
+                        />
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+            {filteredRows.length === 0 && (
+              <tr>
+                <td colSpan={1 + TIME_SLOTS.length} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                  {showFilterBar && activeFilterCount > 0 ? "No boats match your filters" : "Nothing to show"}
+                </td>
+              </tr>
             )}
-          </div>
-        );
-      })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

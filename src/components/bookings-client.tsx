@@ -5,6 +5,7 @@ import { addDays, format, parseISO } from "date-fns";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WeekNav } from "@/components/week-nav";
 import { BookingGrid } from "@/components/booking-grid";
+import { TotalsBar } from "@/components/totals-bar";
 import { useToast } from "@/hooks/use-toast";
 import { getWeekStartKey } from "@/lib/booking-utils";
 import type {
@@ -270,6 +271,46 @@ export function BookingsClient({
     [applyBookingChange]
   );
 
+  // Build boat lookup from all boats for totals calculation
+  const boatMap = useMemo(() => {
+    const m = new Map<string, BoatWithRelations>();
+    boats.forEach((b) => m.set(b.id, b));
+    return m;
+  }, [boats]);
+
+  // Calculate totals across ALL resources (not per-tab)
+  const dayBookings = useMemo(
+    () => visibleBookings.filter((b) => b.date === selectedDate),
+    [visibleBookings, selectedDate]
+  );
+
+  const totals = useMemo(() => {
+    const inShed: Record<number, number> = {};
+    const rowing: Record<number, number> = {};
+    for (let s = 1; s <= 9; s++) {
+      inShed[s] = 0;
+      rowing[s] = 0;
+    }
+    for (const b of dayBookings) {
+      for (let s = b.startSlot; s <= b.endSlot; s++) {
+        if (b.resourceType === "boat") {
+          const boat = boatMap.get(b.boatId ?? "");
+          if (boat?.category === "tinny") {
+            inShed[s] += b.crewCount;
+          } else {
+            rowing[s] += b.crewCount;
+            if (!boat?.isOutside) {
+              inShed[s] += b.crewCount;
+            }
+          }
+        } else {
+          inShed[s] += b.crewCount;
+        }
+      }
+    }
+    return { inShed, rowing };
+  }, [dayBookings, boatMap]);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
@@ -290,15 +331,58 @@ export function BookingsClient({
         loading={loadingWeek}
       />
 
-      <Tabs defaultValue="boats">
+      <TotalsBar inShed={totals.inShed} rowing={totals.rowing} />
+
+      <Tabs defaultValue="shells">
         <TabsList>
-          <TabsTrigger value="boats">Boats & Oars</TabsTrigger>
+          <TabsTrigger value="shells">Shells</TabsTrigger>
+          <TabsTrigger value="tinnies">Tinnies</TabsTrigger>
+          <TabsTrigger value="oars">Oars</TabsTrigger>
           <TabsTrigger value="gym">Gym & Equipment</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="boats">
+        <TabsContent value="shells">
           <BookingGrid
-            boats={boats}
+            tab="shells"
+            boats={boats.filter((b) => b.category === "club" || b.category === "private")}
+            equipment={[]}
+            oarSets={[]}
+            bookings={visibleBookings}
+            selectedDate={selectedDate}
+            user={user}
+            loadedAt={loadedAt}
+            onRefresh={refreshCurrentWeek}
+            refreshing={loadingWeek}
+            onBookingPending={handleBookingPending}
+            onPendingBookingResolved={handlePendingBookingResolved}
+            onBookingSaved={handleBookingSaved}
+            onBookingDeleted={handleBookingDeleted}
+          />
+        </TabsContent>
+
+        <TabsContent value="tinnies">
+          <BookingGrid
+            tab="tinnies"
+            boats={boats.filter((b) => b.category === "tinny")}
+            equipment={[]}
+            oarSets={[]}
+            bookings={visibleBookings}
+            selectedDate={selectedDate}
+            user={user}
+            loadedAt={loadedAt}
+            onRefresh={refreshCurrentWeek}
+            refreshing={loadingWeek}
+            onBookingPending={handleBookingPending}
+            onPendingBookingResolved={handlePendingBookingResolved}
+            onBookingSaved={handleBookingSaved}
+            onBookingDeleted={handleBookingDeleted}
+          />
+        </TabsContent>
+
+        <TabsContent value="oars">
+          <BookingGrid
+            tab="oars"
+            boats={[]}
             equipment={[]}
             oarSets={oarSets}
             bookings={visibleBookings}
@@ -316,6 +400,7 @@ export function BookingsClient({
 
         <TabsContent value="gym">
           <BookingGrid
+            tab="gym"
             boats={[]}
             equipment={equipment}
             oarSets={[]}

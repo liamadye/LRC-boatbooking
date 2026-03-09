@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import { TIME_SLOTS, MAX_CREW } from "@/lib/constants";
+import { TIME_SLOTS, MAX_CREW, DAYTIME_TIMES } from "@/lib/constants";
 import { supportsSquadBooking } from "@/lib/booking-utils";
 import { useToast } from "@/hooks/use-toast";
 import type { BoatWithRelations, SerializedBooking, UserProfile } from "@/lib/types";
@@ -61,9 +61,10 @@ export function BookingModal({
   const isEditing = !!editingBooking;
   const boat = boats.find((b) => b.id === target.resourceId);
 
-  // Determine if this boat type supports both coxed and uncoxed configurations
+  // Show coxed toggle for any boat type containing "+" that also has uncoxed options
   // e.g. "4x/4-/4+" supports coxed (5 crew) and uncoxed (4 crew)
-  const hasCoxOption = !!boat && boat.boatType.includes("+") && boat.boatType.includes("/");
+  // Also show for pure "4+" to allow uncoxed rowing
+  const hasCoxOption = !!boat && boat.boatType.includes("+") && boat.boatType !== "8+";
   const coxedCrew = boat ? (MAX_CREW[boat.boatType] ?? 1) : 1;
   const uncoxedCrew = hasCoxOption ? coxedCrew - 1 : coxedCrew;
 
@@ -471,14 +472,44 @@ export function BookingModal({
           )}
 
           {target.slot === 7 && (
-            <div>
-              <Label htmlFor="notes">Specific time (8am-4:30pm slot)</Label>
-              <Input
-                id="notes"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="e.g. 10:00am - 12:00pm"
-              />
+            <div className="space-y-2">
+              <Label>Specific time (8am–4:30pm slot)</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label htmlFor="startTime" className="text-xs text-muted-foreground">Start</Label>
+                  <select
+                    id="startTime"
+                    className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-base"
+                    value={notes?.split(" - ")[0] ?? ""}
+                    onChange={(e) => {
+                      const endTime = notes?.split(" - ")[1] ?? "";
+                      setNotes(endTime ? `${e.target.value} - ${endTime}` : e.target.value);
+                    }}
+                  >
+                    <option value="">Select start</option>
+                    {DAYTIME_TIMES.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <Label htmlFor="endTime" className="text-xs text-muted-foreground">End</Label>
+                  <select
+                    id="endTime"
+                    className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-base"
+                    value={notes?.split(" - ")[1] ?? ""}
+                    onChange={(e) => {
+                      const startTime = notes?.split(" - ")[0] ?? "";
+                      setNotes(startTime ? `${startTime} - ${e.target.value}` : `- ${e.target.value}`);
+                    }}
+                  >
+                    <option value="">Select end</option>
+                    {DAYTIME_TIMES.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
           )}
 

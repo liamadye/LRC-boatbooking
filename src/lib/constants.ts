@@ -15,6 +15,13 @@ export const MAX_CREW: Record<string, number> = {
   tinny: 1, // coach boat
 };
 
+/** 30-minute increment times for the 8am–4:30pm daytime slot */
+export const DAYTIME_TIMES = [
+  "8:00am", "8:30am", "9:00am", "9:30am", "10:00am", "10:30am",
+  "11:00am", "11:30am", "12:00pm", "12:30pm", "1:00pm", "1:30pm",
+  "2:00pm", "2:30pm", "3:00pm", "3:30pm", "4:00pm", "4:30pm",
+] as const;
+
 /** Weight tolerance percentage (±10%) per Boat Usage Policy */
 export const WEIGHT_TOLERANCE_PERCENT = 10;
 
@@ -61,7 +68,7 @@ export const MEMBER_TIME_RESTRICTIONS = {
 export const BOAT_SECTIONS: { label: string; types: string[]; color: string }[] = [
   { label: "Eights (8+)", types: ["8+"], color: "bg-gray-100" },
   { label: "Fours (4x/4-/4+)", types: ["4x/4-/4+", "4x/4-", "4x+/4+"], color: "bg-gray-100" },
-  { label: "Pairs & Doubles (2-/x, 2x)", types: ["2-/x", "2x", "2-/x LWT"], color: "bg-gray-100" },
+  { label: "Pairs & Doubles (2-/x)", types: ["2-/x", "2x", "2-/x LWT"], color: "bg-gray-100" },
   { label: "Singles (1x)", types: ["1x"], color: "bg-gray-50" },
 ];
 

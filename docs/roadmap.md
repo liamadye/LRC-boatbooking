@@ -14,10 +14,10 @@ The booking modal currently asks users to manually enter "Number in boat / crew"
 **Suggestion:** Replace the numeric input with the boat's max crew auto-populated. For multi-configuration boats (e.g. `4x/4-/4+` which could be 4 or 5), show a simple radio or dropdown of the valid crew sizes. For single-configuration boats, just display the crew size as read-only info ("Crew: 9 (8 + cox)") — no input needed.
 
 **Files affected:**
-- `app/src/components/booking-modal.tsx` — remove `crewCount` input, auto-set from boat type
-- `app/src/lib/constants.ts` — potentially add friendly crew labels
-- `app/src/lib/validation.ts` — simplify crew count validation (now just a sanity check)
-- `app/src/app/api/bookings/route.ts` — default `crewCount` from boat type if not provided
+- `src/components/booking-modal.tsx` — remove `crewCount` input, auto-set from boat type
+- `src/lib/constants.ts` — potentially add friendly crew labels
+- `src/lib/validation.ts` — simplify crew count validation (now just a sanity check)
+- `src/app/api/bookings/route.ts` — default `crewCount` from boat type if not provided
 
 ---
 
@@ -44,8 +44,8 @@ The "Admin" nav link is currently shown to **all users**. The page itself redire
 **Suggestion:** Pass the user's role to `AppNav` and conditionally render the Admin link only for `admin`, `captain`, and `vice_captain` roles.
 
 **Files affected:**
-- `app/src/components/app-nav.tsx` — accept `userRole` prop, filter `navLinks`
-- `app/src/(app)/layout.tsx` — pass role to `AppNav`
+- `src/components/app-nav.tsx` — accept `userRole` prop, filter `navLinks`
+- `src/(app)/layout.tsx` — pass role to `AppNav`
 
 ### 2.3 Role-based permissions matrix
 **Priority: Medium | Effort: Medium**
@@ -69,7 +69,7 @@ The `PATCH /api/bookings/[id]` endpoint allows editing `crewCount`, `endSlot`, e
 **Suggestion:** Run `validateBooking()` on the updated values before saving. Also check for slot conflicts with other bookings when `endSlot` is changed.
 
 **Files affected:**
-- `app/src/app/api/bookings/[id]/route.ts`
+- `src/app/api/bookings/[id]/route.ts`
 
 ### 3.2 Weight validation uses only booker's weight, not actual crew average
 **Priority: Medium | Effort: High**

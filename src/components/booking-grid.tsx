@@ -7,7 +7,6 @@ import { getBookingDisplayName } from "@/lib/booking-utils";
 import { cn } from "@/lib/utils";
 import { TIME_SLOTS, BOAT_SECTIONS, SECTION_COLORS } from "@/lib/constants";
 import { MobileBookingView } from "@/components/mobile-booking-view";
-import { TotalsBar } from "@/components/totals-bar";
 import { ChevronDown, ChevronRight, Circle, Lock, Ban, RefreshCw, Loader2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import type {
@@ -25,7 +24,10 @@ const BookingDetailPopover = dynamic(() =>
   import("@/components/booking-detail-popover").then((m) => ({ default: m.BookingDetailPopover }))
 );
 
+type TabType = "shells" | "tinnies" | "oars" | "gym";
+
 type Props = {
+  tab: TabType;
   boats: BoatWithRelations[];
   equipment: EquipmentItem[];
   oarSets: OarSetItem[];
@@ -49,6 +51,7 @@ type BookingTarget = {
 };
 
 export function BookingGrid({
+  tab,
   boats,
   equipment,
   oarSets,
@@ -63,6 +66,7 @@ export function BookingGrid({
   onBookingSaved,
   onBookingDeleted,
 }: Props) {
+  const showBoatColumns = tab === "shells";
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [bookingTarget, setBookingTarget] = useState<BookingTarget | null>(null);
   const [selectedBooking, setSelectedBooking] = useState<SerializedBooking | null>(null);
@@ -169,34 +173,6 @@ export function BookingGrid({
     setBookingTarget({ resourceType, resourceId, resourceName, slot });
   }
 
-  // Calculate totals using boatMap for O(1) lookup
-  const totals = useMemo(() => {
-    const inShed: Record<number, number> = {};
-    const rowing: Record<number, number> = {};
-    for (let s = 1; s <= 9; s++) {
-      inShed[s] = 0;
-      rowing[s] = 0;
-    }
-    for (const b of dayBookings) {
-      for (let s = b.startSlot; s <= b.endSlot; s++) {
-        if (b.resourceType === "boat") {
-          const boat = boatMap.get(b.boatId ?? "");
-          if (boat?.category === "tinny") {
-            inShed[s] += b.crewCount;
-          } else {
-            rowing[s] += b.crewCount;
-            if (!boat?.isOutside) {
-              inShed[s] += b.crewCount;
-            }
-          }
-        } else {
-          inShed[s] += b.crewCount;
-        }
-      }
-    }
-    return { inShed, rowing };
-  }, [dayBookings, boatMap]);
-
   return (
     <>
       {loadedAt && (
@@ -206,38 +182,40 @@ export function BookingGrid({
           refreshing={refreshing}
         />
       )}
-      <TotalsBar inShed={totals.inShed} rowing={totals.rowing} />
 
-      {/* Mobile view — only shown when there are boats */}
-      {boats.length > 0 && (
-        <MobileBookingView
-          boats={boats}
-          equipment={equipment}
-          oarSets={oarSets}
-          dayBookings={dayBookings}
-          selectedDate={selectedDate}
-          user={user}
-          boatMap={boatMap}
-          equipMap={equipMap}
-          oarMap={oarMap}
-          onBookingClick={(booking) => setSelectedBooking(booking)}
-          onSlotClick={(type, id, name, slot) =>
-            setBookingTarget({ resourceType: type, resourceId: id, resourceName: name, slot })
-          }
-        />
-      )}
+      {/* Mobile view */}
+      <MobileBookingView
+        tab={tab}
+        boats={boats}
+        equipment={equipment}
+        oarSets={oarSets}
+        dayBookings={dayBookings}
+        selectedDate={selectedDate}
+        user={user}
+        boatMap={boatMap}
+        equipMap={equipMap}
+        oarMap={oarMap}
+        onBookingClick={(booking) => setSelectedBooking(booking)}
+        onSlotClick={(type, id, name, slot) =>
+          setBookingTarget({ resourceType: type, resourceId: id, resourceName: name, slot })
+        }
+      />
 
-      {/* Desktop view (always visible on mobile for equipment-only/gym tab) */}
-      <div className={cn("overflow-x-auto rounded-lg border bg-white", boats.length > 0 && "hidden md:block")}>
+      {/* Desktop view */}
+      <div className="overflow-x-auto rounded-lg border bg-white hidden md:block">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-gray-50">
               <th scope="col" className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left font-medium w-48">
-                {boats.length > 0 ? "Boat" : "Equipment"}
+                {tab === "shells" ? "Boat" : tab === "tinnies" ? "Tinny" : tab === "oars" ? "Oar Set" : "Equipment"}
               </th>
-              <th scope="col" className="px-2 py-2 text-left font-medium w-20">Type</th>
-              <th scope="col" className="px-2 py-2 text-left font-medium w-16">Wt</th>
-              <th scope="col" className="px-2 py-2 text-left font-medium w-28">Squad</th>
+              {showBoatColumns && (
+                <>
+                  <th scope="col" className="px-2 py-2 text-left font-medium w-20">Type</th>
+                  <th scope="col" className="px-2 py-2 text-left font-medium w-16">Wt</th>
+                  <th scope="col" className="px-2 py-2 text-left font-medium w-28">Squad</th>
+                </>
+              )}
               {TIME_SLOTS.map((ts) => (
                 <th
                   scope="col"
@@ -250,8 +228,8 @@ export function BookingGrid({
             </tr>
           </thead>
           <tbody>
-            {/* Club Boats by section */}
-            {BOAT_SECTIONS.map((section) => {
+            {/* Club Boats by section (shells tab) */}
+            {tab === "shells" && BOAT_SECTIONS.map((section) => {
               const sectionBoats = clubBoats.filter((b) =>
                 section.types.includes(b.boatType)
               );
@@ -266,12 +244,14 @@ export function BookingGrid({
                     isCollapsed={isCollapsed}
                     onToggle={() => toggleSection(section.label)}
                     colorClass={SECTION_COLORS.club}
+                    extraColumns={showBoatColumns ? 3 : 0}
                   />
                   {!isCollapsed &&
                     sectionBoats.map((boat) => (
                       <BoatRow
                         key={boat.id}
                         boat={boat}
+                        showBoatColumns={showBoatColumns}
                         getBooking={getBooking}
                         onCellClick={handleCellClick}
                         colorClass={section.color}
@@ -282,44 +262,22 @@ export function BookingGrid({
               );
             })}
 
-            {/* Oar Sets */}
-            {oarSets.length > 0 && <SectionGroup>
-              <SectionHeader
-                label="Oar Sets"
-                count={oarSets.length}
-                isCollapsed={collapsedSections.has("Oar Sets")}
-                onToggle={() => toggleSection("Oar Sets")}
-                colorClass={SECTION_COLORS.oars}
-              />
-              {!collapsedSections.has("Oar Sets") &&
-                oarSets.map((os) => (
-                  <ResourceRow
-                    key={os.id}
-                    id={os.id}
-                    name={os.name}
-                    resourceType="oar_set"
-                    colorClass={SECTION_COLORS.oars}
-                    getBooking={getBooking}
-                    onCellClick={handleCellClick}
-                    currentUserId={user.id}
-                  />
-                ))}
-            </SectionGroup>}
-
-            {/* Private Boats */}
-            {privateBoats.length > 0 && <SectionGroup>
+            {/* Private Boats (shells tab) */}
+            {tab === "shells" && privateBoats.length > 0 && <SectionGroup>
               <SectionHeader
                 label="Private Boats"
                 count={privateBoats.length}
                 isCollapsed={collapsedSections.has("Private Boats")}
                 onToggle={() => toggleSection("Private Boats")}
                 colorClass={SECTION_COLORS.private}
+                extraColumns={showBoatColumns ? 3 : 0}
               />
               {!collapsedSections.has("Private Boats") &&
                 privateBoats.map((boat) => (
                   <BoatRow
                     key={boat.id}
                     boat={boat}
+                    showBoatColumns={showBoatColumns}
                     getBooking={getBooking}
                     onCellClick={handleCellClick}
                     colorClass={SECTION_COLORS.private}
@@ -328,79 +286,77 @@ export function BookingGrid({
                 ))}
             </SectionGroup>}
 
-            {/* Tinnies */}
-            {tinnies.length > 0 && <SectionGroup>
-              <SectionHeader
-                label="Tinnies (Coach Boats)"
-                count={tinnies.length}
-                isCollapsed={collapsedSections.has("Tinnies")}
-                onToggle={() => toggleSection("Tinnies")}
-                colorClass={SECTION_COLORS.tinny}
+            {/* Tinnies (tinnies tab) */}
+            {tab === "tinnies" && tinnies.length > 0 &&
+              tinnies.map((boat) => (
+                <BoatRow
+                  key={boat.id}
+                  boat={boat}
+                  showBoatColumns={false}
+                  getBooking={getBooking}
+                  onCellClick={handleCellClick}
+                  colorClass={SECTION_COLORS.tinny}
+                  currentUserId={user.id}
+                />
+              ))
+            }
+
+            {/* Oar Sets (oars tab) */}
+            {tab === "oars" && oarSets.map((os) => (
+              <ResourceRow
+                key={os.id}
+                id={os.id}
+                name={os.name}
+                resourceType="oar_set"
+                colorClass={SECTION_COLORS.oars}
+                getBooking={getBooking}
+                onCellClick={handleCellClick}
+                currentUserId={user.id}
               />
-              {!collapsedSections.has("Tinnies") &&
-                tinnies.map((boat) => (
-                  <BoatRow
-                    key={boat.id}
-                    boat={boat}
+            ))}
+
+            {/* Equipment (gym tab) */}
+            {tab === "gym" && (
+              <>
+                {ergs.map((e) => (
+                  <ResourceRow
+                    key={e.id}
+                    id={e.id}
+                    name={`Erg ${e.number}`}
+                    subtitle="ONE SLOT ONLY"
+                    resourceType="equipment"
+                    colorClass={SECTION_COLORS.equipment}
                     getBooking={getBooking}
                     onCellClick={handleCellClick}
-                    colorClass={SECTION_COLORS.tinny}
                     currentUserId={user.id}
                   />
                 ))}
-            </SectionGroup>}
-
-            {/* Equipment */}
-            {equipment.length > 0 && <SectionGroup>
-              <SectionHeader
-                label="Ergs, Bikes & Gym"
-                count={equipment.length}
-                isCollapsed={collapsedSections.has("Equipment")}
-                onToggle={() => toggleSection("Equipment")}
-                colorClass={SECTION_COLORS.equipment}
-              />
-              {!collapsedSections.has("Equipment") && (
-                <>
-                  {ergs.map((e) => (
-                    <ResourceRow
-                      key={e.id}
-                      id={e.id}
-                      name={`Erg ${e.number}`}
-                      subtitle="ONE SLOT ONLY"
-                      resourceType="equipment"
-                      colorClass={SECTION_COLORS.equipment}
-                      getBooking={getBooking}
-                      onCellClick={handleCellClick}
-                      currentUserId={user.id}
-                    />
-                  ))}
-                  {bikes.map((e) => (
-                    <ResourceRow
-                      key={e.id}
-                      id={e.id}
-                      name={`Bike ${e.number}`}
-                      resourceType="equipment"
-                      colorClass={SECTION_COLORS.equipment}
-                      getBooking={getBooking}
-                      onCellClick={handleCellClick}
-                      currentUserId={user.id}
-                    />
-                  ))}
-                  {gyms.map((e) => (
-                    <ResourceRow
-                      key={e.id}
-                      id={e.id}
-                      name={`Gym ${e.number}`}
-                      resourceType="equipment"
-                      colorClass={SECTION_COLORS.equipment}
-                      getBooking={getBooking}
-                      onCellClick={handleCellClick}
-                      currentUserId={user.id}
-                    />
-                  ))}
-                </>
-              )}
-            </SectionGroup>}
+                {bikes.map((e) => (
+                  <ResourceRow
+                    key={e.id}
+                    id={e.id}
+                    name={`Bike ${e.number}`}
+                    resourceType="equipment"
+                    colorClass={SECTION_COLORS.equipment}
+                    getBooking={getBooking}
+                    onCellClick={handleCellClick}
+                    currentUserId={user.id}
+                  />
+                ))}
+                {gyms.map((e) => (
+                  <ResourceRow
+                    key={e.id}
+                    id={e.id}
+                    name={`Gym ${e.number}`}
+                    resourceType="equipment"
+                    colorClass={SECTION_COLORS.equipment}
+                    getBooking={getBooking}
+                    onCellClick={handleCellClick}
+                    currentUserId={user.id}
+                  />
+                ))}
+              </>
+            )}
           </tbody>
         </table>
       </div>
@@ -452,12 +408,14 @@ const SectionHeader = memo(function SectionHeader({
   isCollapsed,
   onToggle,
   colorClass,
+  extraColumns = 3,
 }: {
   label: string;
   count: number;
   isCollapsed: boolean;
   onToggle: () => void;
   colorClass: string;
+  extraColumns?: number;
 }) {
   return (
     <tr
@@ -468,7 +426,7 @@ const SectionHeader = memo(function SectionHeader({
       aria-expanded={!isCollapsed}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } }}
     >
-      <td colSpan={4 + TIME_SLOTS.length} className="px-3 py-2 font-semibold">
+      <td colSpan={1 + extraColumns + TIME_SLOTS.length} className="px-3 py-2 font-semibold">
         <div className="flex items-center gap-2">
           {isCollapsed ? (
             <ChevronRight className="h-4 w-4" aria-hidden="true" />
@@ -487,12 +445,14 @@ const SectionHeader = memo(function SectionHeader({
 
 const BoatRow = memo(function BoatRow({
   boat,
+  showBoatColumns = true,
   getBooking,
   onCellClick,
   colorClass,
   currentUserId,
 }: {
   boat: BoatWithRelations;
+  showBoatColumns?: boolean;
   getBooking: (id: string, slot: number) => SerializedBooking | undefined;
   onCellClick: (type: "boat", id: string, name: string, slot: number) => void;
   colorClass: string;
@@ -517,13 +477,17 @@ const BoatRow = memo(function BoatRow({
           <span className="truncate max-w-[160px]">{boat.name}</span>
         </div>
       </td>
-      <td className="px-2 py-1.5 text-muted-foreground">{boat.boatType}</td>
-      <td className="px-2 py-1.5 text-muted-foreground">
-        {boat.avgWeightKg ? `${boat.avgWeightKg}` : "—"}
-      </td>
-      <td className="px-2 py-1.5 text-muted-foreground text-xs truncate max-w-[120px]">
-        {boat.responsibleSquad?.name ?? boat.responsiblePerson ?? "—"}
-      </td>
+      {showBoatColumns && (
+        <>
+          <td className="px-2 py-1.5 text-muted-foreground">{boat.boatType}</td>
+          <td className="px-2 py-1.5 text-muted-foreground">
+            {boat.avgWeightKg ? `${boat.avgWeightKg}` : "—"}
+          </td>
+          <td className="px-2 py-1.5 text-muted-foreground text-xs truncate max-w-[120px]">
+            {boat.responsibleSquad?.name ?? boat.responsiblePerson ?? "—"}
+          </td>
+        </>
+      )}
       {TIME_SLOTS.map((ts) => {
         const booking = getBooking(boat.id, ts.slot);
         return (
@@ -573,9 +537,6 @@ const ResourceRow = memo(function ResourceRow({
           )}
         </div>
       </td>
-      <td className="px-2 py-1.5" />
-      <td className="px-2 py-1.5" />
-      <td className="px-2 py-1.5" />
       {TIME_SLOTS.map((ts) => {
         const booking = getBooking(id, ts.slot);
         return (

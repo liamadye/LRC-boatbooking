@@ -1,98 +1,62 @@
 # LRC Boat Booking Portal
 
-Next.js + Supabase + Prisma app for Leichhardt Rowing Club booking management.
+Boat booking system for Leichhardt Rowing Club. Built with Next.js 14, Supabase, Prisma, and Tailwind CSS.
 
-## Prerequisites
+Members can book club boats, private boats, oar sets, coach tinnies, and equipment (ergs, bikes, gym) across 9 daily time slots — replacing the club's existing Excel spreadsheet.
 
-- Node.js 20+
-- npm
-- Supabase project (URL + anon key)
-- PostgreSQL database compatible with Prisma (`DATABASE_URL`, `DIRECT_URL`)
-
-## Environment Variables
-
-Create `.env` with:
+## Quick Start
 
 ```bash
-NEXT_PUBLIC_SUPABASE_URL=...
-NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-DATABASE_URL=...
-DIRECT_URL=...
-```
-
-## Local Development
-
-```bash
+cp .env.example .env   # Add your Supabase + database credentials
 npm ci
 npm run dev
 ```
 
-## Quality Checks
+## Prerequisites
 
-```bash
-npm run lint
-npm run build
-```
+- Node.js 20+
+- Supabase project (URL + anon key)
+- PostgreSQL database (via Supabase)
 
-## Smoke Tests
+## Environment Variables
 
-Run against local app (expects app running on `http://localhost:3000`):
+Create `.env` from `.env.example`:
 
-```bash
-npm run smoke
-```
+| Variable | Description |
+|----------|-------------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anonymous key |
+| `DATABASE_URL` | Prisma connection string (pooled) |
+| `DIRECT_URL` | Prisma direct connection (for migrations) |
 
-Run against any deployed URL:
+## Commands
 
-```bash
-bash scripts/smoke.sh https://your-deployment.vercel.app
-```
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start dev server |
+| `npm run build` | Production build (includes `prisma generate`) |
+| `npm run lint` | ESLint |
+| `npm test` | Unit tests (Vitest) |
+| `npm run test:e2e` | E2E tests (Playwright) |
+| `npm run smoke` | Smoke tests against localhost:3000 |
 
-## Real Email Budget
+## Deployment
 
-Invite/recovery end-to-end tests can send real emails. Any future test code on this branch should reserve email budget before sending them.
-
-Default policy:
-
-- real email budget: `5`
-- going above `5` requires explicit approval via `REAL_EMAIL_BUDGET_APPROVED=1`
-- non-routable test domains such as `example.com` do not count against the budget
-
-Reset the run budget:
-
-```bash
-npm run email-budget -- --reset
-```
-
-Reserve budget for planned sends:
-
-```bash
-npm run email-budget -- person1@example.com
-npm run email-budget -- liam+signup-123@liamdye.com
-```
-
-The second command above will count against the budget because it targets a real inbox domain. If a test run genuinely needs more than five real emails, require explicit approval first and then run with:
-
-```bash
-REAL_EMAIL_BUDGET_APPROVED=1 npm run email-budget -- liam+signup-123@liamdye.com
-```
-
-## Vercel Deployment
-
-Build command:
-
-```bash
-npm run build
-```
-
-Deploy:
+Hosted on Vercel. Builds from the project root — Next.js auto-detects `src/app/`.
 
 ```bash
 vercel deploy --prod --yes
-```
-
-After deploy, run smoke tests against the production URL:
-
-```bash
 bash scripts/smoke.sh https://your-production-domain.vercel.app
 ```
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [`CLAUDE.md`](CLAUDE.md) | AI assistant reference (project structure, conventions, key files) |
+| [`docs/architecture.md`](docs/architecture.md) | Architecture decisions and patterns |
+| [`docs/plan.md`](docs/plan.md) | Original implementation plan and data model |
+| [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | Version history |
+| [`docs/roadmap.md`](docs/roadmap.md) | Future improvement suggestions |
+| [`docs/supabase-emails/`](docs/supabase-emails/) | Branded email templates |
+| [`docs/reference/`](docs/reference/) | Source materials (spreadsheet, policy PDF) |
