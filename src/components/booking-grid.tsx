@@ -3,6 +3,8 @@
 import { useState, useEffect, useMemo, useCallback, memo } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
+import { BoatInfoDialog } from "@/components/boat-info-dialog";
+import { formatBookingWindow } from "@/lib/booking-times";
 import { getBookingDisplayName } from "@/lib/booking-utils";
 import { cn } from "@/lib/utils";
 import { TIME_SLOTS, BOAT_SECTIONS, SECTION_COLORS } from "@/lib/constants";
@@ -71,6 +73,7 @@ export function BookingGrid({
   const [bookingTarget, setBookingTarget] = useState<BookingTarget | null>(null);
   const [selectedBooking, setSelectedBooking] = useState<SerializedBooking | null>(null);
   const [editingBooking, setEditingBooking] = useState<SerializedBooking | null>(null);
+  const [selectedBoat, setSelectedBoat] = useState<BoatWithRelations | null>(null);
 
   useEffect(() => {
     setSelectedBooking((current) =>
@@ -132,12 +135,25 @@ export function BookingGrid({
 
   // Index bookings by resource for quick lookup
   const bookingIndex = useMemo(() => {
-    const idx: Record<string, Record<number, SerializedBooking>> = {};
+    const idx: Record<string, Record<number, SerializedBooking[]>> = {};
     for (const b of dayBookings) {
       const key = b.boatId ?? b.equipmentId ?? b.oarSetId ?? "";
       if (!idx[key]) idx[key] = {};
       for (let s = b.startSlot; s <= b.endSlot; s++) {
-        idx[key][s] = b;
+        if (!idx[key][s]) {
+          idx[key][s] = [];
+        }
+        idx[key][s].push(b);
+      }
+    }
+    for (const resourceId of Object.keys(idx)) {
+      for (const slot of Object.keys(idx[resourceId])) {
+        idx[resourceId][Number(slot)].sort((a, b) => {
+          if (a.startMinutes !== b.startMinutes) {
+            return a.startMinutes - b.startMinutes;
+          }
+          return a.id.localeCompare(b.id);
+        });
       }
     }
     return idx;
@@ -152,8 +168,8 @@ export function BookingGrid({
     });
   }
 
-  function getBooking(resourceId: string, slot: number): SerializedBooking | undefined {
-    return bookingIndex[resourceId]?.[slot];
+  function getBookings(resourceId: string, slot: number): SerializedBooking[] {
+    return bookingIndex[resourceId]?.[slot] ?? [];
   }
 
   function handleCellClick(
@@ -162,8 +178,8 @@ export function BookingGrid({
     resourceName: string,
     slot: number
   ) {
-    const existing = getBooking(resourceId, slot);
-    if (existing) {
+    const existing = getBookings(resourceId, slot)[0];
+    if (slot !== 7 && existing) {
       if (existing.clientStatus === "pending") {
         return;
       }
@@ -189,16 +205,13 @@ export function BookingGrid({
         boats={boats}
         equipment={equipment}
         oarSets={oarSets}
-        dayBookings={dayBookings}
-        selectedDate={selectedDate}
         user={user}
-        boatMap={boatMap}
-        equipMap={equipMap}
-        oarMap={oarMap}
+        getBookings={getBookings}
         onBookingClick={(booking) => setSelectedBooking(booking)}
         onSlotClick={(type, id, name, slot) =>
           setBookingTarget({ resourceType: type, resourceId: id, resourceName: name, slot })
         }
+        onBoatInfoClick={(boat) => setSelectedBoat(boat)}
       />
 
       {/* Desktop view */}
@@ -252,8 +265,10 @@ export function BookingGrid({
                         key={boat.id}
                         boat={boat}
                         showBoatColumns={showBoatColumns}
-                        getBooking={getBooking}
+                        getBookings={getBookings}
                         onCellClick={handleCellClick}
+                        onBookingClick={setSelectedBooking}
+                        onBoatInfoClick={setSelectedBoat}
                         colorClass={section.color}
                         currentUserId={user.id}
                       />
@@ -274,15 +289,17 @@ export function BookingGrid({
               />
               {!collapsedSections.has("Private Boats") &&
                 privateBoats.map((boat) => (
-                  <BoatRow
-                    key={boat.id}
-                    boat={boat}
-                    showBoatColumns={showBoatColumns}
-                    getBooking={getBooking}
-                    onCellClick={handleCellClick}
-                    colorClass={SECTION_COLORS.private}
-                    currentUserId={user.id}
-                  />
+                    <BoatRow
+                      key={boat.id}
+                      boat={boat}
+                      showBoatColumns={showBoatColumns}
+                      getBookings={getBookings}
+                      onCellClick={handleCellClick}
+                      onBookingClick={setSelectedBooking}
+                      onBoatInfoClick={setSelectedBoat}
+                      colorClass={SECTION_COLORS.private}
+                      currentUserId={user.id}
+                    />
                 ))}
             </SectionGroup>}
 
@@ -293,8 +310,10 @@ export function BookingGrid({
                   key={boat.id}
                   boat={boat}
                   showBoatColumns={false}
-                  getBooking={getBooking}
+                  getBookings={getBookings}
                   onCellClick={handleCellClick}
+                  onBookingClick={setSelectedBooking}
+                  onBoatInfoClick={setSelectedBoat}
                   colorClass={SECTION_COLORS.tinny}
                   currentUserId={user.id}
                 />
@@ -309,10 +328,11 @@ export function BookingGrid({
                 name={os.name}
                 resourceType="oar_set"
                 colorClass={SECTION_COLORS.oars}
-                getBooking={getBooking}
-                onCellClick={handleCellClick}
-                currentUserId={user.id}
-              />
+                  getBookings={getBookings}
+                  onCellClick={handleCellClick}
+                  onBookingClick={setSelectedBooking}
+                  currentUserId={user.id}
+                />
             ))}
 
             {/* Equipment (gym tab) */}
@@ -326,10 +346,11 @@ export function BookingGrid({
                     subtitle="ONE SLOT ONLY"
                     resourceType="equipment"
                     colorClass={SECTION_COLORS.equipment}
-                    getBooking={getBooking}
-                    onCellClick={handleCellClick}
-                    currentUserId={user.id}
-                  />
+                  getBookings={getBookings}
+                  onCellClick={handleCellClick}
+                  onBookingClick={setSelectedBooking}
+                  currentUserId={user.id}
+                />
                 ))}
                 {bikes.map((e) => (
                   <ResourceRow
@@ -338,10 +359,11 @@ export function BookingGrid({
                     name={`Bike ${e.number}`}
                     resourceType="equipment"
                     colorClass={SECTION_COLORS.equipment}
-                    getBooking={getBooking}
-                    onCellClick={handleCellClick}
-                    currentUserId={user.id}
-                  />
+                  getBookings={getBookings}
+                  onCellClick={handleCellClick}
+                  onBookingClick={setSelectedBooking}
+                  currentUserId={user.id}
+                />
                 ))}
                 {gyms.map((e) => (
                   <ResourceRow
@@ -350,10 +372,11 @@ export function BookingGrid({
                     name={`Gym ${e.number}`}
                     resourceType="equipment"
                     colorClass={SECTION_COLORS.equipment}
-                    getBooking={getBooking}
-                    onCellClick={handleCellClick}
-                    currentUserId={user.id}
-                  />
+                  getBookings={getBookings}
+                  onCellClick={handleCellClick}
+                  onBookingClick={setSelectedBooking}
+                  currentUserId={user.id}
+                />
                 ))}
               </>
             )}
@@ -391,6 +414,10 @@ export function BookingGrid({
           }}
           onEdit={handleEdit}
         />
+      )}
+
+      {selectedBoat && (
+        <BoatInfoDialog boat={selectedBoat} onClose={() => setSelectedBoat(null)} />
       )}
     </>
   );
@@ -446,15 +473,19 @@ const SectionHeader = memo(function SectionHeader({
 const BoatRow = memo(function BoatRow({
   boat,
   showBoatColumns = true,
-  getBooking,
+  getBookings,
   onCellClick,
+  onBookingClick,
+  onBoatInfoClick,
   colorClass,
   currentUserId,
 }: {
   boat: BoatWithRelations;
   showBoatColumns?: boolean;
-  getBooking: (id: string, slot: number) => SerializedBooking | undefined;
+  getBookings: (id: string, slot: number) => SerializedBooking[];
   onCellClick: (type: "boat", id: string, name: string, slot: number) => void;
+  onBookingClick: (booking: SerializedBooking) => void;
+  onBoatInfoClick: (boat: BoatWithRelations) => void;
   colorClass: string;
   currentUserId: string;
 }) {
@@ -474,7 +505,16 @@ const BoatRow = memo(function BoatRow({
           )}
           {isPrivate && <span title="Private boat"><Lock className="h-3 w-3 text-blue-500" aria-hidden="true" /><span className="sr-only">Private boat</span></span>}
           {isNotInUse && <span title="Not in use"><Ban className="h-3 w-3 text-red-500" aria-hidden="true" /><span className="sr-only">Not in use</span></span>}
-          <span className="truncate max-w-[160px]">{boat.name}</span>
+          <button
+            type="button"
+            className="truncate max-w-[160px] text-left hover:underline"
+            onClick={(event) => {
+              event.stopPropagation();
+              onBoatInfoClick(boat);
+            }}
+          >
+            {boat.name}
+          </button>
         </div>
       </td>
       {showBoatColumns && (
@@ -489,14 +529,16 @@ const BoatRow = memo(function BoatRow({
         </>
       )}
       {TIME_SLOTS.map((ts) => {
-        const booking = getBooking(boat.id, ts.slot);
+        const bookings = getBookings(boat.id, ts.slot);
         return (
           <BookingCell
             key={ts.slot}
-            booking={booking}
+            bookings={bookings}
+            slot={ts.slot}
             isNotInUse={isNotInUse}
             currentUserId={currentUserId}
-            onClick={() =>
+            onBookingClick={onBookingClick}
+            onAddClick={() =>
               !isNotInUse && onCellClick("boat", boat.id, boat.name, ts.slot)
             }
           />
@@ -512,8 +554,9 @@ const ResourceRow = memo(function ResourceRow({
   subtitle,
   resourceType,
   colorClass,
-  getBooking,
+  getBookings,
   onCellClick,
+  onBookingClick,
   currentUserId,
 }: {
   id: string;
@@ -521,8 +564,9 @@ const ResourceRow = memo(function ResourceRow({
   subtitle?: string;
   resourceType: "equipment" | "oar_set";
   colorClass: string;
-  getBooking: (id: string, slot: number) => SerializedBooking | undefined;
+  getBookings: (id: string, slot: number) => SerializedBooking[];
   onCellClick: (type: "equipment" | "oar_set", id: string, name: string, slot: number) => void;
+  onBookingClick: (booking: SerializedBooking) => void;
   currentUserId: string;
 }) {
   return (
@@ -538,13 +582,15 @@ const ResourceRow = memo(function ResourceRow({
         </div>
       </td>
       {TIME_SLOTS.map((ts) => {
-        const booking = getBooking(id, ts.slot);
+        const bookings = getBookings(id, ts.slot);
         return (
           <BookingCell
             key={ts.slot}
-            booking={booking}
+            bookings={bookings}
+            slot={ts.slot}
             currentUserId={currentUserId}
-            onClick={() => onCellClick(resourceType, id, name, ts.slot)}
+            onBookingClick={onBookingClick}
+            onAddClick={() => onCellClick(resourceType, id, name, ts.slot)}
           />
         );
       })}
@@ -600,15 +646,19 @@ function RefreshIndicator({
 }
 
 const BookingCell = memo(function BookingCell({
-  booking,
+  bookings,
+  slot,
   isNotInUse,
   currentUserId,
-  onClick,
+  onBookingClick,
+  onAddClick,
 }: {
-  booking?: SerializedBooking;
+  bookings: SerializedBooking[];
+  slot: number;
   isNotInUse?: boolean;
   currentUserId: string;
-  onClick: () => void;
+  onBookingClick: (booking: SerializedBooking) => void;
+  onAddClick: () => void;
 }) {
   if (isNotInUse) {
     return (
@@ -620,6 +670,54 @@ const BookingCell = memo(function BookingCell({
     );
   }
 
+  if (slot === 7) {
+    return (
+      <td className="px-1 py-1.5 align-top">
+        <div className="space-y-1 min-w-[110px]">
+          {bookings.map((booking) => {
+            const isOwn = booking.userId === currentUserId;
+            const isPending = booking.clientStatus === "pending";
+
+            return (
+              <button
+                key={booking.id}
+                className={cn(
+                  "w-full rounded border px-1.5 py-1 text-left transition-colors",
+                  isPending
+                    ? "cursor-wait border-dashed bg-amber-50 border-amber-300"
+                    : isOwn
+                      ? "bg-blue-100 border-blue-300 hover:bg-blue-200"
+                      : "bg-gray-100 border-gray-200 hover:bg-gray-200",
+                  booking.isRaceSpecific && "ring-1 ring-amber-400"
+                )}
+                onClick={() => onBookingClick(booking)}
+                disabled={isPending}
+              >
+                <div className="flex items-center gap-1">
+                  {isPending && <Loader2 className="h-3 w-3 animate-spin text-amber-700" />}
+                  <span className="truncate text-[10px] font-medium">
+                    {formatBookingWindow(booking)}
+                  </span>
+                </div>
+                <div className="truncate text-[10px] text-muted-foreground">
+                  {getBookingDisplayName(booking)} ({booking.crewCount})
+                </div>
+              </button>
+            );
+          })}
+          <button
+            className="h-8 w-full rounded border border-dashed border-gray-200 hover:border-blue-400 hover:bg-blue-50/50 transition-colors text-[10px] text-muted-foreground"
+            onClick={onAddClick}
+            aria-label="Add daytime booking"
+          >
+            {bookings.length === 0 ? "Book" : "Add"}
+          </button>
+        </div>
+      </td>
+    );
+  }
+
+  const booking = bookings[0];
   if (booking) {
     const isOwn = booking.userId === currentUserId;
     const isPending = booking.clientStatus === "pending";
@@ -635,7 +733,7 @@ const BookingCell = memo(function BookingCell({
                 : "bg-gray-100 border-gray-200 hover:bg-gray-200",
             booking.isRaceSpecific && "ring-1 ring-amber-400"
           )}
-          onClick={onClick}
+          onClick={() => onBookingClick(booking)}
           disabled={isPending}
         >
           {isPending && <Loader2 className="mr-1 h-3 w-3 animate-spin text-amber-700" />}
@@ -658,7 +756,7 @@ const BookingCell = memo(function BookingCell({
     <td className="px-1 py-1.5 text-center">
       <button
         className="h-8 w-full rounded border border-dashed border-gray-200 hover:border-blue-400 hover:bg-blue-50/50 transition-colors"
-        onClick={onClick}
+        onClick={onAddClick}
         title="Click to book"
         aria-label="Book this slot"
       />

@@ -25,7 +25,6 @@ type BookingInput = {
   isWeekend: boolean;
   isRaceSpecific?: boolean;
   equipmentType?: "erg" | "bike" | "gym";
-  existingBookingsOnConsecutiveDays?: number;
 };
 
 /**
@@ -131,19 +130,6 @@ export function validateBooking(input: BookingInput): ValidationError[] {
     errors.push({
       field: "timeSlot",
       message: "Ergs can only be booked for one time slot.",
-    });
-  }
-
-  // 9. Consecutive day warning (soft validation — returns warning, not blocking unless !raceSpecific)
-  if (
-    input.existingBookingsOnConsecutiveDays &&
-    input.existingBookingsOnConsecutiveDays > 0 &&
-    !input.isRaceSpecific
-  ) {
-    errors.push({
-      field: "consecutiveDay",
-      message:
-        "This boat is already booked on a consecutive day. Consecutive-day bookings require race-specific justification (training days + target regattas).",
     });
   }
 

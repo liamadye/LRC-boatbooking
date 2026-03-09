@@ -141,23 +141,6 @@ describe("validateBooking", () => {
     expect(errors.some((e) => e.message.includes("Ergs"))).toBe(false);
   });
 
-  it("warns about consecutive day bookings without race-specific", () => {
-    const errors = validateBooking({
-      ...baseInput,
-      existingBookingsOnConsecutiveDays: 1,
-      isRaceSpecific: false,
-    });
-    expect(errors.some((e) => e.field === "consecutiveDay")).toBe(true);
-  });
-
-  it("allows consecutive day bookings with race-specific", () => {
-    const errors = validateBooking({
-      ...baseInput,
-      existingBookingsOnConsecutiveDays: 1,
-      isRaceSpecific: true,
-    });
-    expect(errors.some((e) => e.field === "consecutiveDay")).toBe(false);
-  });
 });
 
 describe("isWeekend", () => {

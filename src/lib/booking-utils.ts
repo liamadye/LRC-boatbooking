@@ -14,6 +14,8 @@ type BookingLike = {
   crewCount: number;
   startSlot: number;
   endSlot: number;
+  startMinutes: number;
+  endMinutes: number;
   isRaceSpecific: boolean;
   raceDetails?: string | null;
   notes: string | null;
@@ -49,6 +51,8 @@ export function serializeBooking(booking: BookingLike): SerializedBooking {
     crewCount: booking.crewCount,
     startSlot: booking.startSlot,
     endSlot: booking.endSlot,
+    startMinutes: booking.startMinutes,
+    endMinutes: booking.endMinutes,
     isRaceSpecific: booking.isRaceSpecific,
     raceDetails: booking.raceDetails ?? null,
     notes: booking.notes,

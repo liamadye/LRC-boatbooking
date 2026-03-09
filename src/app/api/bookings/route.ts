@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { validateBooking } from "@/lib/validation";
 import { isWeekend } from "@/lib/validation";
-import { addDays, subDays, parseISO, startOfWeek, format } from "date-fns";
+import { bookingsOverlap, getDefaultEndMinutes, getDefaultStartMinutes } from "@/lib/booking-times";
+import { addDays, parseISO, startOfWeek, format } from "date-fns";
 import { createRateLimiter } from "@/lib/rate-limit";
 import {
   buildBookingWeekPayload,
@@ -90,6 +91,8 @@ export async function POST(request: NextRequest) {
     crewCount,
     startSlot,
     endSlot,
+    startMinutes,
+    endMinutes,
     isRaceSpecific,
     raceDetails,
     notes,
@@ -107,6 +110,18 @@ export async function POST(request: NextRequest) {
 
   // Check booking window (if configured for this week)
   const bookingDate = parseISO(date);
+  const requestedStartMinutes =
+    typeof startMinutes === "number" ? startMinutes : getDefaultStartMinutes(startSlot);
+  const requestedEndMinutes =
+    typeof endMinutes === "number" ? endMinutes : getDefaultEndMinutes(endSlot);
+
+  if (requestedEndMinutes <= requestedStartMinutes) {
+    return NextResponse.json(
+      { errors: [{ field: "timeSlot", message: "End time must be after start time." }] },
+      { status: 400 }
+    );
+  }
+
   const weekStart = startOfWeek(bookingDate, { weekStartsOn: 1 });
   const bookingWeek = await prisma.bookingWeek.findUnique({
     where: { weekStart },
@@ -183,21 +198,6 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Check for consecutive day bookings (same boat, day before or after)
-  let consecutiveDayCount = 0;
-  if (boat) {
-    const bookingDate = parseISO(date);
-    const consecutiveBookings = await prisma.booking.count({
-      where: {
-        boatId: boat.id,
-        date: {
-          in: [subDays(bookingDate, 1), addDays(bookingDate, 1)],
-        },
-      },
-    });
-    consecutiveDayCount = consecutiveBookings;
-  }
-
   // Run validation
   const validationErrors = validateBooking({
     boatType: boat?.boatType,
@@ -219,7 +219,6 @@ export async function POST(request: NextRequest) {
     isWeekend: isWeekend(bookingDate),
     isRaceSpecific,
     equipmentType: equipmentItem?.type as "erg" | "bike" | "gym" | undefined,
-    existingBookingsOnConsecutiveDays: consecutiveDayCount,
   });
 
   if (validationErrors.length > 0) {
@@ -227,17 +226,23 @@ export async function POST(request: NextRequest) {
   }
 
   // Check for conflicts (double booking) — single range overlap query
-  const conflictWhere: Record<string, unknown> = {
-    date: bookingDate,
-    startSlot: { lte: endSlot },
-    endSlot: { gte: startSlot },
-  };
-
+  const conflictWhere: Record<string, unknown> = { date: bookingDate };
   if (resourceType === "boat") conflictWhere.boatId = resourceId;
   else if (resourceType === "equipment") conflictWhere.equipmentId = resourceId;
   else if (resourceType === "oar_set") conflictWhere.oarSetId = resourceId;
 
-  const conflict = await prisma.booking.findFirst({ where: conflictWhere });
+  const conflictCandidates = await prisma.booking.findMany({ where: conflictWhere });
+  const conflict = conflictCandidates.find((existing) =>
+    bookingsOverlap(
+      {
+        startSlot,
+        endSlot,
+        startMinutes: requestedStartMinutes,
+        endMinutes: requestedEndMinutes,
+      },
+      existing
+    )
+  );
   if (conflict) {
     return NextResponse.json(
       {
@@ -266,6 +271,8 @@ export async function POST(request: NextRequest) {
       crewCount,
       startSlot,
       endSlot,
+      startMinutes: requestedStartMinutes,
+      endMinutes: requestedEndMinutes,
       isRaceSpecific,
       raceDetails,
       notes,

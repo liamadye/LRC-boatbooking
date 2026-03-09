@@ -40,6 +40,8 @@ export type BookingSlot = {
   crewCount: number;
   startSlot: number;
   endSlot: number;
+  startMinutes: number;
+  endMinutes: number;
   userId: string;
   isRaceSpecific: boolean;
   notes: string | null;
@@ -64,6 +66,8 @@ export type SerializedBooking = {
   crewCount: number;
   startSlot: number;
   endSlot: number;
+  startMinutes: number;
+  endMinutes: number;
   isRaceSpecific: boolean;
   raceDetails?: string | null;
   notes: string | null;

@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { formatBookingWindow } from "@/lib/booking-times";
 import { getBookingDisplayName } from "@/lib/booking-utils";
 import { useToast } from "@/hooks/use-toast";
-import { TIME_SLOTS } from "@/lib/constants";
 import { format } from "date-fns";
 import { Trash2 } from "lucide-react";
 import type { SquadSummary } from "@/lib/types";
@@ -23,6 +23,8 @@ type Booking = {
   crewCount: number;
   startSlot: number;
   endSlot: number;
+  startMinutes: number;
+  endMinutes: number;
   isRaceSpecific: boolean;
   notes: string | null;
   squad: SquadSummary | null;
@@ -57,10 +59,6 @@ export default function MyBookingsPage() {
     } else {
       toast({ title: "Failed to cancel", variant: "destructive" });
     }
-  }
-
-  function getSlotLabel(slot: number): string {
-    return TIME_SLOTS.find((ts) => ts.slot === slot)?.label ?? `Slot ${slot}`;
   }
 
   if (loading) {
@@ -104,11 +102,7 @@ export default function MyBookingsPage() {
                   )}
                 </div>
                 <div className="text-sm text-muted-foreground">
-                  {format(new Date(booking.date), "EEE d MMM yyyy")} —{" "}
-                  {getSlotLabel(booking.startSlot)}
-                  {booking.endSlot !== booking.startSlot && (
-                    <> to {getSlotLabel(booking.endSlot)}</>
-                  )}
+                  {format(new Date(booking.date), "EEE d MMM yyyy")} — {formatBookingWindow(booking)}
                 </div>
                 <div className="text-sm text-muted-foreground">
                   {getBookingDisplayName(booking)} — {booking.crewCount} in boat

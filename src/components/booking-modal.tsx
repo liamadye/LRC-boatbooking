@@ -13,6 +13,12 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { TIME_SLOTS, MAX_CREW, DAYTIME_TIMES } from "@/lib/constants";
+import {
+  getDaytimeOptionForMinutes,
+  getDefaultEndMinutes,
+  getDefaultStartMinutes,
+  parseDaytimeTime,
+} from "@/lib/booking-times";
 import { supportsSquadBooking } from "@/lib/booking-utils";
 import { useToast } from "@/hooks/use-toast";
 import type { BoatWithRelations, SerializedBooking, UserProfile } from "@/lib/types";
@@ -28,6 +34,8 @@ type BookingPayload = {
   bookerName: string;
   squadId: string | null;
   endSlot: number;
+  startMinutes: number;
+  endMinutes: number;
   isRaceSpecific: boolean;
   raceDetails: string | null;
   notes: string | null;
@@ -97,9 +105,19 @@ export function BookingModal({
   );
   const effectiveCrew = hasCoxOption ? (isCoxed ? coxedCrew : uncoxedCrew) : maxCrew;
   const [endSlot, setEndSlot] = useState(editingBooking?.endSlot ?? target.slot);
+  const [daytimeStart, setDaytimeStart] = useState(
+    target.slot === 7
+      ? getDaytimeOptionForMinutes(editingBooking?.startMinutes ?? null)
+      : ""
+  );
+  const [daytimeEnd, setDaytimeEnd] = useState(
+    target.slot === 7 && (editingBooking?.endSlot ?? target.slot) === 7
+      ? getDaytimeOptionForMinutes(editingBooking?.endMinutes ?? null)
+      : ""
+  );
   const [isRaceSpecific, setIsRaceSpecific] = useState(editingBooking?.isRaceSpecific ?? false);
   const [raceDetails, setRaceDetails] = useState(editingBooking?.raceDetails ?? "");
-  const [notes, setNotes] = useState(editingBooking?.notes ?? "");
+  const [notes] = useState(editingBooking?.notes ?? "");
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
 
@@ -131,6 +149,31 @@ export function BookingModal({
   }
 
   function buildPayload(): BookingSubmission {
+    let startMinutes = getDefaultStartMinutes(target.slot);
+    let endMinutes = getDefaultEndMinutes(endSlot);
+
+    if (target.slot === 7) {
+      const parsedStart = daytimeStart ? parseDaytimeTime(daytimeStart) : getDefaultStartMinutes(7);
+      if (parsedStart == null) {
+        return { errors: ["Please select a valid daytime start time."] };
+      }
+
+      startMinutes = parsedStart;
+
+      if (endSlot === 7) {
+        const parsedEnd = daytimeEnd ? parseDaytimeTime(daytimeEnd) : getDefaultEndMinutes(7);
+        if (parsedEnd == null) {
+          return { errors: ["Please select a valid daytime end time."] };
+        }
+
+        if (parsedEnd <= parsedStart) {
+          return { errors: ["Daytime end time must be after the start time."] };
+        }
+
+        endMinutes = parsedEnd;
+      }
+    }
+
     let submitBookerName = bookerName;
     let submitSquadId: string | null = null;
 
@@ -148,6 +191,8 @@ export function BookingModal({
         bookerName: submitBookerName,
         squadId: submitSquadId,
         endSlot,
+        startMinutes,
+        endMinutes,
         isRaceSpecific,
         raceDetails: isRaceSpecific ? raceDetails : null,
         notes: notes || null,
@@ -204,6 +249,8 @@ export function BookingModal({
       crewCount: effectiveCrew,
       startSlot: target.slot,
       endSlot: payload.endSlot,
+      startMinutes: payload.startMinutes,
+      endMinutes: payload.endMinutes,
       isRaceSpecific: payload.isRaceSpecific,
       raceDetails: payload.raceDetails,
       notes: payload.notes,
@@ -474,42 +521,43 @@ export function BookingModal({
           {target.slot === 7 && (
             <div className="space-y-2">
               <Label>Specific time (8am–4:30pm slot)</Label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className={endSlot === 7 ? "grid grid-cols-2 gap-2" : "grid grid-cols-1 gap-2"}>
                 <div>
                   <Label htmlFor="startTime" className="text-xs text-muted-foreground">Start</Label>
                   <select
                     id="startTime"
                     className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-base"
-                    value={notes?.split(" - ")[0] ?? ""}
-                    onChange={(e) => {
-                      const endTime = notes?.split(" - ")[1] ?? "";
-                      setNotes(endTime ? `${e.target.value} - ${endTime}` : e.target.value);
-                    }}
+                    value={daytimeStart}
+                    onChange={(e) => setDaytimeStart(e.target.value)}
                   >
-                    <option value="">Select start</option>
+                    <option value="">8:00am</option>
                     {DAYTIME_TIMES.map((t) => (
                       <option key={t} value={t}>{t}</option>
                     ))}
                   </select>
                 </div>
-                <div>
-                  <Label htmlFor="endTime" className="text-xs text-muted-foreground">End</Label>
-                  <select
-                    id="endTime"
-                    className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-base"
-                    value={notes?.split(" - ")[1] ?? ""}
-                    onChange={(e) => {
-                      const startTime = notes?.split(" - ")[0] ?? "";
-                      setNotes(startTime ? `${startTime} - ${e.target.value}` : `- ${e.target.value}`);
-                    }}
-                  >
-                    <option value="">Select end</option>
-                    {DAYTIME_TIMES.map((t) => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
-                </div>
+                {endSlot === 7 && (
+                  <div>
+                    <Label htmlFor="endTime" className="text-xs text-muted-foreground">End</Label>
+                    <select
+                      id="endTime"
+                      className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-base"
+                      value={daytimeEnd}
+                      onChange={(e) => setDaytimeEnd(e.target.value)}
+                    >
+                      <option value="">4:30pm</option>
+                      {DAYTIME_TIMES.map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
+              {endSlot > 7 && (
+                <p className="text-xs text-muted-foreground">
+                  Start time is exact within the daytime slot. The booking then continues through the later slot you selected.
+                </p>
+              )}
             </div>
           )}
 

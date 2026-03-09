@@ -203,6 +203,8 @@ model Booking {
   crewCount      Int          @default(1) @map("crew_count")
   startSlot      Int          @map("start_slot")
   endSlot        Int          @map("end_slot")
+  startMinutes   Int          @map("start_minutes")
+  endMinutes     Int          @map("end_minutes")
   isRaceSpecific Boolean      @default(false) @map("is_race_specific")
   raceDetails    String?      @map("race_details")
   notes          String?
@@ -216,12 +218,12 @@ model Booking {
   squad     Squad?     @relation(fields: [squadId], references: [id], onDelete: SetNull)
   user      User       @relation(fields: [userId], references: [id])
 
-  @@unique([date, boatId, startSlot])
-  @@unique([date, equipmentId, startSlot])
-  @@unique([date, oarSetId, startSlot])
   @@index([date])
   @@index([userId])
   @@index([boatId, date])
+  @@index([date, boatId, startMinutes])
+  @@index([date, equipmentId, startMinutes])
+  @@index([date, oarSetId, startMinutes])
   @@index([squadId])
   @@map("bookings")
 }

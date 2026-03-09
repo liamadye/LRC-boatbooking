@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { formatBookingWindow } from "@/lib/booking-times";
 import { useToast } from "@/hooks/use-toast";
 import { format, addDays } from "date-fns";
 import { Trash2 } from "lucide-react";
@@ -18,17 +19,14 @@ type AdminBooking = {
   crewCount: number;
   startSlot: number;
   endSlot: number;
+  startMinutes: number;
+  endMinutes: number;
   isRaceSpecific: boolean;
   notes: string | null;
   boat: { name: string; boatType: string } | null;
   equipment: { type: string; number: number } | null;
   oarSet: { name: string } | null;
   user: { fullName: string; email: string };
-};
-
-const SLOT_LABELS: Record<number, string> = {
-  1: "5:00am", 2: "5:30am", 3: "6:00am", 4: "6:30am",
-  5: "7:00am", 6: "7:30am", 7: "8am-4:30pm", 8: "4:30-6pm", 9: "6:15pm+",
 };
 
 export function BookingManagement() {
@@ -138,8 +136,7 @@ export function BookingManagement() {
                   <div className="text-xs text-muted-foreground">{booking.user.email}</div>
                 </td>
                 <td className="px-3 py-2">
-                  {SLOT_LABELS[booking.startSlot]}
-                  {booking.endSlot !== booking.startSlot && ` – ${SLOT_LABELS[booking.endSlot]}`}
+                  {formatBookingWindow(booking)}
                 </td>
                 <td className="px-3 py-2">
                   {booking.crewCount}

@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
+import { formatBookingWindow } from "@/lib/booking-times";
 import { cn } from "@/lib/utils";
 import { TIME_SLOTS, BOAT_SECTIONS } from "@/lib/constants";
 import { getBookingDisplayName } from "@/lib/booking-utils";
@@ -41,14 +42,11 @@ type Props = {
   boats: BoatWithRelations[];
   equipment: EquipmentItem[];
   oarSets: OarSetItem[];
-  dayBookings: SerializedBooking[];
-  selectedDate: string;
   user: UserProfile;
-  boatMap: Map<string, BoatWithRelations>;
-  equipMap: Map<string, EquipmentItem>;
-  oarMap: Map<string, OarSetItem>;
+  getBookings: (resourceId: string, slot: number) => SerializedBooking[];
   onBookingClick: (booking: SerializedBooking) => void;
   onSlotClick: (resourceType: "boat" | "equipment" | "oar_set", resourceId: string, resourceName: string, slot: number) => void;
+  onBoatInfoClick: (boat: BoatWithRelations) => void;
 };
 
 export function MobileBookingView({
@@ -56,10 +54,11 @@ export function MobileBookingView({
   boats,
   equipment,
   oarSets,
-  dayBookings,
   user,
+  getBookings,
   onBookingClick,
   onSlotClick,
+  onBoatInfoClick,
 }: Props) {
   const [filters, setFilters] = useState<MobileFilters>({
     boatType: "all",
@@ -87,6 +86,7 @@ export function MobileBookingView({
     status?: string;
     isOutside?: boolean;
     subtitle?: string;
+    sectionLabel?: string;
   };
 
   const resourceRows = useMemo((): ResourceRow[] => {
@@ -105,6 +105,7 @@ export function MobileBookingView({
           category: b.category,
           status: b.status,
           isOutside: b.isOutside,
+          sectionLabel: section.label,
         })));
       }
       const privateBoats = boats.filter((b) => b.category === "private");
@@ -117,6 +118,7 @@ export function MobileBookingView({
         category: b.category,
         status: b.status,
         isOutside: b.isOutside,
+        sectionLabel: "Private Boats",
       })));
       return rows;
     }
@@ -172,23 +174,6 @@ export function MobileBookingView({
       return true;
     });
   }, [resourceRows, filters, showFilterBar]);
-
-  // Index bookings by resource
-  const bookingIndex = useMemo(() => {
-    const idx: Record<string, Record<number, SerializedBooking>> = {};
-    for (const b of dayBookings) {
-      const key = b.boatId ?? b.equipmentId ?? b.oarSetId ?? "";
-      if (!idx[key]) idx[key] = {};
-      for (let s = b.startSlot; s <= b.endSlot; s++) {
-        idx[key][s] = b;
-      }
-    }
-    return idx;
-  }, [dayBookings]);
-
-  function getBooking(resourceId: string, slot: number): SerializedBooking | undefined {
-    return bookingIndex[resourceId]?.[slot];
-  }
 
   return (
     <div className="space-y-4 md:hidden">
@@ -315,79 +300,152 @@ export function MobileBookingView({
             </tr>
           </thead>
           <tbody>
-            {filteredRows.map((row) => {
+            {filteredRows.map((row, index) => {
               const isNotInUse = row.status === "not_in_use";
               const isBlack = row.classification === "black";
               const isPrivate = row.category === "private";
+              const previousRow = filteredRows[index - 1];
+              const showSectionHeader =
+                !!row.sectionLabel && row.sectionLabel !== previousRow?.sectionLabel;
 
               return (
-                <tr key={row.id} className={cn("border-t", isNotInUse && "opacity-50")}>
-                  <td className="sticky left-0 z-10 bg-white px-3 py-1.5 font-medium">
-                    <div className="flex items-center gap-1.5">
-                      {isBlack && <Circle className="h-3 w-3 flex-shrink-0 fill-gray-800 text-gray-800" />}
-                      {!isBlack && !isPrivate && tab === "shells" && <Circle className="h-3 w-3 flex-shrink-0 fill-green-500 text-green-500" />}
-                      {isPrivate && <Lock className="h-3 w-3 flex-shrink-0 text-blue-500" />}
-                      {isNotInUse && <Ban className="h-3 w-3 flex-shrink-0 text-red-500" />}
-                      <span className="truncate max-w-[120px]">{row.name}</span>
-                      {row.subtitle && (
-                        <span className="text-[9px] text-muted-foreground">{row.subtitle}</span>
-                      )}
-                    </div>
-                  </td>
-                  {TIME_SLOTS.map((ts) => {
-                    const booking = getBooking(row.id, ts.slot);
+                <Fragment key={row.id}>
+                  {showSectionHeader && (
+                    <tr key={`${row.sectionLabel}-header`} className="border-t bg-gray-50">
+                      <td colSpan={1 + TIME_SLOTS.length} className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        {row.sectionLabel}
+                      </td>
+                    </tr>
+                  )}
+                  <tr key={row.id} className={cn("border-t", isNotInUse && "opacity-50")}>
+                    <td className="sticky left-0 z-10 bg-white px-3 py-1.5 font-medium">
+                      <div className="flex items-center gap-1.5">
+                        {isBlack && <Circle className="h-3 w-3 flex-shrink-0 fill-gray-800 text-gray-800" />}
+                        {!isBlack && !isPrivate && tab === "shells" && <Circle className="h-3 w-3 flex-shrink-0 fill-green-500 text-green-500" />}
+                        {isPrivate && <Lock className="h-3 w-3 flex-shrink-0 text-blue-500" />}
+                        {isNotInUse && <Ban className="h-3 w-3 flex-shrink-0 text-red-500" />}
+                        {row.resourceType === "boat" ? (
+                          <button
+                            type="button"
+                            className="truncate max-w-[120px] text-left hover:underline"
+                            onClick={() => {
+                              const boat = boats.find((entry) => entry.id === row.id);
+                              if (boat) {
+                                onBoatInfoClick(boat);
+                              }
+                            }}
+                          >
+                            {row.name}
+                          </button>
+                        ) : (
+                          <span className="truncate max-w-[120px]">{row.name}</span>
+                        )}
+                        {row.subtitle && (
+                          <span className="text-[9px] text-muted-foreground">{row.subtitle}</span>
+                        )}
+                      </div>
+                    </td>
+                    {TIME_SLOTS.map((ts) => {
+                      const bookings = getBookings(row.id, ts.slot);
 
-                    if (isNotInUse) {
-                      return (
-                        <td key={ts.slot} className="px-1 py-1.5 text-center">
-                          <div className="h-8 rounded bg-red-50 flex items-center justify-center">
-                            <Ban className="h-3 w-3 text-red-300" />
-                          </div>
-                        </td>
-                      );
-                    }
+                      if (isNotInUse) {
+                        return (
+                          <td key={ts.slot} className="px-1 py-1.5 text-center">
+                            <div className="h-8 rounded bg-red-50 flex items-center justify-center">
+                              <Ban className="h-3 w-3 text-red-300" />
+                            </div>
+                          </td>
+                        );
+                      }
 
-                    if (booking) {
-                      const isOwn = booking.userId === user.id;
-                      const isPending = booking.clientStatus === "pending";
+                      if (ts.slot === 7) {
+                        return (
+                          <td key={ts.slot} className="px-1 py-1.5 align-top">
+                            <div className="space-y-1 min-w-[96px]">
+                              {bookings.map((booking) => {
+                                const isOwn = booking.userId === user.id;
+                                const isPending = booking.clientStatus === "pending";
+                                return (
+                                  <button
+                                    key={booking.id}
+                                    className={cn(
+                                      "w-full rounded border px-1.5 py-1 text-left",
+                                      isPending
+                                        ? "cursor-wait border-dashed bg-amber-50 border-amber-300"
+                                        : isOwn
+                                          ? "bg-blue-100 border-blue-300 hover:bg-blue-200"
+                                          : "bg-gray-100 border-gray-200 hover:bg-gray-200"
+                                    )}
+                                    onClick={() => !isPending && onBookingClick(booking)}
+                                    disabled={isPending}
+                                  >
+                                    <div className="flex items-center gap-1">
+                                      {isPending && <Loader2 className="h-3 w-3 animate-spin text-amber-700" />}
+                                      <span className="truncate text-[10px] font-medium">
+                                        {formatBookingWindow(booking)}
+                                      </span>
+                                    </div>
+                                    <div className="truncate text-[10px] text-muted-foreground">
+                                      {getBookingDisplayName(booking)} ({booking.crewCount})
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                              <button
+                                className="h-8 w-full rounded border border-dashed border-gray-200 hover:border-blue-400 hover:bg-blue-50/50 transition-colors text-[10px] text-muted-foreground"
+                                onClick={() => onSlotClick(row.resourceType, row.id, row.name, ts.slot)}
+                                aria-label="Add daytime booking"
+                              >
+                                {bookings.length === 0 ? "Book" : "Add"}
+                              </button>
+                            </div>
+                          </td>
+                        );
+                      }
+
+                      const booking = bookings[0];
+                      if (booking) {
+                        const isOwn = booking.userId === user.id;
+                        const isPending = booking.clientStatus === "pending";
+                        return (
+                          <td key={ts.slot} className="px-1 py-1.5 text-center">
+                            <button
+                              className={cn(
+                                "h-8 w-full rounded border flex items-center justify-center px-1 transition-colors",
+                                isPending
+                                  ? "cursor-wait border-dashed bg-amber-50 border-amber-300"
+                                  : isOwn
+                                    ? "bg-blue-100 border-blue-300 hover:bg-blue-200"
+                                    : "bg-gray-100 border-gray-200 hover:bg-gray-200",
+                                booking.isRaceSpecific && "ring-1 ring-amber-400"
+                              )}
+                              onClick={() => !isPending && onBookingClick(booking)}
+                              disabled={isPending}
+                            >
+                              {isPending && <Loader2 className="mr-1 h-3 w-3 animate-spin text-amber-700" />}
+                              <span className={cn(
+                                "text-[10px] font-medium truncate",
+                                isPending ? "text-amber-800" : isOwn ? "text-blue-800" : "text-gray-700"
+                              )}>
+                                {getBookingDisplayName(booking)} ({booking.crewCount})
+                              </span>
+                            </button>
+                          </td>
+                        );
+                      }
+
                       return (
                         <td key={ts.slot} className="px-1 py-1.5 text-center">
                           <button
-                            className={cn(
-                              "h-8 w-full rounded border flex items-center justify-center px-1 transition-colors",
-                              isPending
-                                ? "cursor-wait border-dashed bg-amber-50 border-amber-300"
-                                : isOwn
-                                  ? "bg-blue-100 border-blue-300 hover:bg-blue-200"
-                                  : "bg-gray-100 border-gray-200 hover:bg-gray-200",
-                              booking.isRaceSpecific && "ring-1 ring-amber-400"
-                            )}
-                            onClick={() => !isPending && onBookingClick(booking)}
-                            disabled={isPending}
-                          >
-                            {isPending && <Loader2 className="mr-1 h-3 w-3 animate-spin text-amber-700" />}
-                            <span className={cn(
-                              "text-[10px] font-medium truncate",
-                              isPending ? "text-amber-800" : isOwn ? "text-blue-800" : "text-gray-700"
-                            )}>
-                              {getBookingDisplayName(booking)} ({booking.crewCount})
-                            </span>
-                          </button>
+                            className="h-8 w-full rounded border border-dashed border-gray-200 hover:border-blue-400 hover:bg-blue-50/50 transition-colors"
+                            onClick={() => onSlotClick(row.resourceType, row.id, row.name, ts.slot)}
+                            aria-label="Book this slot"
+                          />
                         </td>
                       );
-                    }
-
-                    return (
-                      <td key={ts.slot} className="px-1 py-1.5 text-center">
-                        <button
-                          className="h-8 w-full rounded border border-dashed border-gray-200 hover:border-blue-400 hover:bg-blue-50/50 transition-colors"
-                          onClick={() => onSlotClick(row.resourceType, row.id, row.name, ts.slot)}
-                          aria-label="Book this slot"
-                        />
-                      </td>
-                    );
-                  })}
-                </tr>
+                    })}
+                  </tr>
+                </Fragment>
               );
             })}
             {filteredRows.length === 0 && (

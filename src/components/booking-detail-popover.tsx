@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { TIME_SLOTS } from "@/lib/constants";
+import { formatBookingWindow } from "@/lib/booking-times";
 import { getBookingDisplayName } from "@/lib/booking-utils";
 import { useToast } from "@/hooks/use-toast";
 import { can } from "@/lib/permissions";
@@ -48,9 +48,6 @@ export function BookingDetailPopover({
   const oar = oarSets.find((o) => o.id === booking.oarSetId);
 
   const resourceName = boat?.name ?? (equip ? `${equip.type.charAt(0).toUpperCase() + equip.type.slice(1)} ${equip.number}` : oar?.name ?? "Unknown");
-
-  const startLabel = TIME_SLOTS.find((ts) => ts.slot === booking.startSlot)?.label ?? "";
-  const endLabel = TIME_SLOTS.find((ts) => ts.slot === booking.endSlot)?.label ?? "";
 
   const isOwner = booking.userId === user.id;
   const canCancel = isOwner || can(user.role, "manage_bookings");
@@ -92,10 +89,7 @@ export function BookingDetailPopover({
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Time</span>
-            <span>
-              {startLabel}
-              {booking.endSlot !== booking.startSlot && ` – ${endLabel}`}
-            </span>
+            <span>{formatBookingWindow(booking)}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Crew</span>

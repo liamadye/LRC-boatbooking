@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { validateBooking, isWeekend } from "@/lib/validation";
+import { bookingsOverlap, getDefaultEndMinutes, getDefaultStartMinutes } from "@/lib/booking-times";
 import { can } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
 import { serializeBooking, supportsSquadBooking } from "@/lib/booking-utils";
@@ -102,6 +103,14 @@ export async function PATCH(
   const body = await request.json();
 
   const newEndSlot = body.endSlot ?? booking.endSlot;
+  const newStartMinutes =
+    typeof body.startMinutes === "number"
+      ? body.startMinutes
+      : booking.startMinutes ?? getDefaultStartMinutes(booking.startSlot);
+  const newEndMinutes =
+    typeof body.endMinutes === "number"
+      ? body.endMinutes
+      : booking.endMinutes ?? getDefaultEndMinutes(newEndSlot);
   const newCrewCount = body.crewCount ?? booking.crewCount;
   const newIsRaceSpecific = body.isRaceSpecific ?? booking.isRaceSpecific;
   const hasExplicitSquadChange = Object.prototype.hasOwnProperty.call(body, "squadId");
@@ -110,22 +119,10 @@ export async function PATCH(
 
   // Re-run validation if booking a boat
   if (booking.boatId) {
-    // Parallel: boat + consecutive count are independent
-    const [boat, consecutiveBookings] = await Promise.all([
-      prisma.boat.findUnique({ where: { id: booking.boatId }, include: { privateBoatAccess: { select: { userId: true } } } }),
-      prisma.booking.count({
-        where: {
-          boatId: booking.boatId,
-          id: { not: booking.id },
-          date: {
-            in: [
-              new Date(booking.date.getTime() - 86400000),
-              new Date(booking.date.getTime() + 86400000),
-            ],
-          },
-        },
-      }),
-    ]);
+    const boat = await prisma.boat.findUnique({
+      where: { id: booking.boatId },
+      include: { privateBoatAccess: { select: { userId: true } } },
+    });
 
     if (boat) {
       if (nextSquadId) {
@@ -164,7 +161,6 @@ export async function PATCH(
         userHasBlackBoatEligibility: user.hasBlackBoatEligibility,
         isWeekend: isWeekend(booking.date),
         isRaceSpecific: newIsRaceSpecific,
-        existingBookingsOnConsecutiveDays: consecutiveBookings,
       });
 
       if (validationErrors.length > 0) {
@@ -178,26 +174,39 @@ export async function PATCH(
     );
   }
 
-  // Check for slot conflicts if endSlot changed — single range overlap query
-  if (body.endSlot && body.endSlot !== booking.endSlot) {
-    const resourceField = booking.boatId ? "boatId" : booking.equipmentId ? "equipmentId" : "oarSetId";
-    const resourceId = booking.boatId ?? booking.equipmentId ?? booking.oarSetId;
+  if (newEndMinutes <= newStartMinutes) {
+    return NextResponse.json(
+      { errors: [{ field: "timeSlot", message: "End time must be after start time." }] },
+      { status: 400 }
+    );
+  }
 
-    const conflict = await prisma.booking.findFirst({
-      where: {
-        id: { not: booking.id },
-        date: booking.date,
-        [resourceField]: resourceId,
-        startSlot: { lte: newEndSlot },
-        endSlot: { gte: booking.startSlot },
+  const resourceField = booking.boatId ? "boatId" : booking.equipmentId ? "equipmentId" : "oarSetId";
+  const resourceId = booking.boatId ?? booking.equipmentId ?? booking.oarSetId;
+
+  const conflictCandidates = await prisma.booking.findMany({
+    where: {
+      id: { not: booking.id },
+      date: booking.date,
+      [resourceField]: resourceId,
+    },
+  });
+  const conflict = conflictCandidates.find((existing) =>
+    bookingsOverlap(
+      {
+        startSlot: booking.startSlot,
+        endSlot: newEndSlot,
+        startMinutes: newStartMinutes,
+        endMinutes: newEndMinutes,
       },
-    });
-    if (conflict) {
-      return NextResponse.json(
-        { errors: [{ field: "slot", message: `This time slot overlaps with a booking by ${conflict.bookerName}.` }] },
-        { status: 409 }
-      );
-    }
+      existing
+    )
+  );
+  if (conflict) {
+    return NextResponse.json(
+      { errors: [{ field: "slot", message: `This time slot overlaps with a booking by ${conflict.bookerName}.` }] },
+      { status: 409 }
+    );
   }
 
   let nextBookerName = body.bookerName ?? booking.bookerName;
@@ -214,6 +223,8 @@ export async function PATCH(
       bookerName: nextBookerName,
       crewCount: newCrewCount,
       endSlot: newEndSlot,
+      startMinutes: newStartMinutes,
+      endMinutes: newEndMinutes,
       isRaceSpecific: newIsRaceSpecific,
       raceDetails: body.raceDetails ?? booking.raceDetails,
       notes: body.notes ?? booking.notes,

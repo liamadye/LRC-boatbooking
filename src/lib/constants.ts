@@ -27,15 +27,15 @@ export const WEIGHT_TOLERANCE_PERCENT = 10;
 
 /** Time slot definitions */
 export const TIME_SLOTS = [
-  { slot: 1, label: "5:00am", startMinutes: 300 },
-  { slot: 2, label: "5:30am", startMinutes: 330 },
-  { slot: 3, label: "6:00am", startMinutes: 360 },
-  { slot: 4, label: "6:30am", startMinutes: 390 },
-  { slot: 5, label: "7:00am", startMinutes: 420 },
-  { slot: 6, label: "7:30am", startMinutes: 450 },
-  { slot: 7, label: "8am-4:30pm", startMinutes: 480 },
-  { slot: 8, label: "4:30-6pm", startMinutes: 990 },
-  { slot: 9, label: "6:15pm+", startMinutes: 1095 },
+  { slot: 1, label: "5:00am", startMinutes: 300, endMinutes: 330 },
+  { slot: 2, label: "5:30am", startMinutes: 330, endMinutes: 360 },
+  { slot: 3, label: "6:00am", startMinutes: 360, endMinutes: 390 },
+  { slot: 4, label: "6:30am", startMinutes: 390, endMinutes: 420 },
+  { slot: 5, label: "7:00am", startMinutes: 420, endMinutes: 450 },
+  { slot: 6, label: "7:30am", startMinutes: 450, endMinutes: 480 },
+  { slot: 7, label: "8am-4:30pm", startMinutes: 480, endMinutes: 990 },
+  { slot: 8, label: "4:30-6pm", startMinutes: 990, endMinutes: 1080 },
+  { slot: 9, label: "6:15pm+", startMinutes: 1095, endMinutes: 1260 },
 ] as const;
 
 /**
