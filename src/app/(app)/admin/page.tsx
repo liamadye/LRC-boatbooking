@@ -4,6 +4,7 @@ import { AdminTabs } from "@/components/admin/admin-tabs";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { invitationInclude, serializeInvitation } from "@/lib/admin-invitations";
+import { serializeSignupRequest, signupRequestInclude } from "@/lib/signup-requests";
 
 export default async function AdminPage() {
   const user = await getAuthenticatedUser();
@@ -12,7 +13,7 @@ export default async function AdminPage() {
     redirect("/bookings");
   }
 
-  const [boats, squads, users, applications, invitations] = await Promise.all([
+  const [boats, squads, users, applications, invitations, signupRequests] = await Promise.all([
     prisma.boat.findMany({
       include: { responsibleSquad: true, privateBoatAccess: { select: { userId: true } } },
       orderBy: { displayOrder: "asc" },
@@ -29,6 +30,12 @@ export default async function AdminPage() {
     }),
     prisma.invitation.findMany({
       include: invitationInclude,
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    }),
+    prisma.signupRequest.findMany({
+      where: { status: "pending" },
+      include: signupRequestInclude,
       orderBy: { createdAt: "desc" },
       take: 100,
     }),
@@ -61,6 +68,7 @@ export default async function AdminPage() {
           },
         }))}
         invitations={invitations.map(serializeInvitation)}
+        signupRequests={signupRequests.map(serializeSignupRequest)}
       />
     </div>
   );

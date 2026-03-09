@@ -23,6 +23,8 @@ const ACTION_OPTIONS = [
   { value: "boat.update", label: "Boat update" },
   { value: "application.review", label: "Application review" },
   { value: "invitation.send", label: "Invitation send" },
+  { value: "signup_request.approve", label: "Signup approve" },
+  { value: "signup_request.deny", label: "Signup deny" },
   { value: "booking.cancel", label: "Booking cancel" },
 ];
 
@@ -32,6 +34,7 @@ const TARGET_TYPE_OPTIONS = [
   { value: "boat", label: "Boat" },
   { value: "application", label: "Application" },
   { value: "invitation", label: "Invitation" },
+  { value: "signup_request", label: "Signup request" },
   { value: "booking", label: "Booking" },
 ];
 

@@ -3,6 +3,7 @@ import { addDays } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getInvitationUrls } from "@/lib/invitations";
+import { buildInviteEmailMessage, canSendInviteEmails, sendInviteEmail } from "@/lib/invite-email";
 import type { InvitationSummary } from "@/lib/types";
 
 export const invitationInclude = {
@@ -116,6 +117,58 @@ export async function deliverInvitation(args: {
   }
 
   return { emailSent, inviteUrl };
+}
+
+export async function getManualInvitationDelivery(args: {
+  email: string;
+  token: string;
+}) {
+  const urls = await getInvitationUrls(args.email, args.token);
+  const message = buildInviteEmailMessage({ inviteUrl: urls.actionUrl });
+  const mailtoUrl = `mailto:${encodeURIComponent(args.email)}?subject=${encodeURIComponent(message.subject)}&body=${encodeURIComponent(message.text)}`;
+
+  return {
+    inviteUrl: urls.actionUrl,
+    deliveryMode: urls.usedGeneratedLink ? "manual_action_link" as const : "manual_register_link" as const,
+    canEmailFromServer: canSendInviteEmails(),
+    mailtoUrl,
+  };
+}
+
+export async function emailInvitationLink(args: {
+  email: string;
+  token: string;
+}) {
+  const manualDelivery = await getManualInvitationDelivery(args);
+
+  try {
+    const result = await sendInviteEmail({
+      to: args.email,
+      inviteUrl: manualDelivery.inviteUrl,
+    });
+
+    if (!result.sent) {
+      return {
+        ...manualDelivery,
+        emailSent: false,
+        emailConfigured: false,
+      };
+    }
+
+    return {
+      ...manualDelivery,
+      emailSent: true,
+      emailConfigured: true,
+    };
+  } catch (error) {
+    console.error("[invite-email] Failed to send invite email:", error);
+    return {
+      ...manualDelivery,
+      emailSent: false,
+      emailConfigured: true,
+      error: error instanceof Error ? error.message : "Failed to send invitation email.",
+    };
+  }
 }
 
 export function serializeInvitation(invitation: InvitationWithRelations): InvitationSummary {

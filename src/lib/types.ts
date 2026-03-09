@@ -101,6 +101,17 @@ export type InvitationSummary = {
   squads: SquadSummary[];
 };
 
+export type SignupRequestSummary = {
+  id: string;
+  email: string;
+  fullName: string | null;
+  provider: "google";
+  status: "pending" | "approved" | "denied";
+  createdAt: string;
+  reviewedAt: string | null;
+  reviewer: { fullName: string } | null;
+};
+
 export type UserProfile = {
   id: string;
   email: string;

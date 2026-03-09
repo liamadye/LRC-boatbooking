@@ -7,20 +7,44 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Copy, RefreshCw, Trash2 } from "lucide-react";
-import type { InvitationSummary, SquadSummary } from "@/lib/types";
+import { SignupRequestReview } from "@/components/admin/signup-request-review";
+import { Copy, Mail, RefreshCw, Trash2 } from "lucide-react";
+import type { InvitationSummary, SignupRequestSummary, SquadSummary } from "@/lib/types";
 
 type InviteLinkResponse = {
   inviteUrl: string;
+  deliveryMode?: "manual_action_link" | "manual_register_link";
+  canEmailFromServer?: boolean;
+  mailtoUrl?: string;
+  emailSent?: boolean;
+  emailConfigured?: boolean;
+  error?: string;
+};
+
+type InviteDialogState = {
+  title: string;
+  description: string;
+  inviteUrl: string;
+  mailtoUrl?: string;
   deliveryMode?: "manual_action_link" | "manual_register_link";
 };
 
 export function InviteManagement({
   invitations,
+  signupRequests,
   squads,
 }: {
   invitations: InvitationSummary[];
+  signupRequests: SignupRequestSummary[];
   squads: SquadSummary[];
 }) {
   const router = useRouter();
@@ -32,6 +56,7 @@ export function InviteManagement({
   const [selectedSquadIds, setSelectedSquadIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [inviteDialog, setInviteDialog] = useState<InviteDialogState | null>(null);
 
   useEffect(() => {
     setInviteRows(invitations);
@@ -56,10 +81,15 @@ export function InviteManagement({
         title: "Invitation created",
         description: data.emailSent
           ? "Invitation email sent."
-          : "Invite email could not be sent. A shareable invite link has been copied.",
+          : "Invite email could not be sent. Share the invite link manually.",
       });
-      if (data.inviteUrl) {
-        await navigator.clipboard.writeText(data.inviteUrl);
+      if (data.inviteUrl && !data.emailSent) {
+        showInviteDialog({
+          title: "Invite link",
+          description: "Server email was not available for this invitation. Share this link directly with the member.",
+          inviteUrl: data.inviteUrl,
+          deliveryMode: data.deliveryMode,
+        });
       }
       setEmail("");
       setSelectedSquadIds([]);
@@ -77,6 +107,10 @@ export function InviteManagement({
     );
   }
 
+  function showInviteDialog(args: InviteDialogState) {
+    setInviteDialog(args);
+  }
+
   async function copyLink(invitation: InvitationSummary) {
     const res = await fetch(`/api/admin/invitations/${invitation.id}`);
     const data = (await res.json()) as InviteLinkResponse & { error?: string };
@@ -90,13 +124,15 @@ export function InviteManagement({
       return;
     }
 
-    await navigator.clipboard.writeText(data.inviteUrl);
-    toast({
-      title: "Link copied to clipboard",
+    showInviteDialog({
+      title: "Invite link",
       description:
         data.deliveryMode === "manual_action_link"
-          ? "Share this link directly with the member."
-          : undefined,
+          ? "Share this direct invite link with the member."
+          : "Share this registration link with the member.",
+      inviteUrl: data.inviteUrl,
+      mailtoUrl: data.mailtoUrl,
+      deliveryMode: data.deliveryMode,
     });
   }
 
@@ -104,8 +140,10 @@ export function InviteManagement({
     setActionLoadingId(`resend:${invitation.id}`);
     const res = await fetch(`/api/admin/invitations/${invitation.id}`, {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ delivery: "link" }),
     });
-    const data = await res.json();
+    const data = (await res.json()) as InviteLinkResponse & InvitationSummary;
 
     if (!res.ok) {
       toast({
@@ -117,17 +155,69 @@ export function InviteManagement({
       return;
     }
 
-    await navigator.clipboard.writeText(data.inviteUrl);
     setInviteRows((prev) =>
       prev.map((inv) => (inv.id === invitation.id ? (data as InvitationSummary) : inv))
     );
-    toast({
-      title: "Invitation renewed",
+    showInviteDialog({
+      title: "Fresh invite link",
       description:
         data.deliveryMode === "manual_action_link"
-          ? "A fresh invite link has been copied. Supabase will not automatically resend the email for an already-invited user."
-          : "A fresh invite link has been copied.",
+          ? "This is the renewed invite link. Send it directly to the member."
+          : "This is the renewed registration link.",
+      inviteUrl: data.inviteUrl,
+      mailtoUrl: data.mailtoUrl,
+      deliveryMode: data.deliveryMode,
     });
+    setActionLoadingId(null);
+    router.refresh();
+  }
+
+  async function emailInvitation(invitation: InvitationSummary) {
+    setActionLoadingId(`email:${invitation.id}`);
+    const res = await fetch(`/api/admin/invitations/${invitation.id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ delivery: "email" }),
+    });
+    const data = (await res.json()) as InviteLinkResponse & InvitationSummary;
+
+    if (!res.ok) {
+      toast({
+        title: "Failed to email invitation",
+        description: data.error ?? "Unknown error",
+        variant: "destructive",
+      });
+      setActionLoadingId(null);
+      return;
+    }
+
+    setInviteRows((prev) =>
+      prev.map((inv) => (inv.id === invitation.id ? (data as InvitationSummary) : inv))
+    );
+
+    if (data.emailSent) {
+      toast({
+        title: "Invitation email sent",
+        description: `A fresh invite link was emailed to ${invitation.email}.`,
+      });
+    } else if (data.mailtoUrl) {
+      showInviteDialog({
+        title: "Email invite",
+        description: data.emailConfigured
+          ? "The server could not send the invite email. Use the fresh link below or open a prefilled mail draft."
+          : "Server-side invite email is not configured. Open a prefilled mail draft or share the fresh link below.",
+        inviteUrl: data.inviteUrl,
+        mailtoUrl: data.mailtoUrl,
+        deliveryMode: data.deliveryMode,
+      });
+    } else {
+      toast({
+        title: "Invite email was not sent",
+        description: "Use Renew or Copy Link to share the invitation manually.",
+        variant: "destructive",
+      });
+    }
+
     setActionLoadingId(null);
     router.refresh();
   }
@@ -168,6 +258,8 @@ export function InviteManagement({
 
   return (
     <div className="space-y-6 mt-4">
+      <SignupRequestReview requests={signupRequests} squads={squads} />
+
       <form onSubmit={handleInvite} className="space-y-3 sm:space-y-0 sm:flex sm:items-end sm:gap-3 sm:flex-wrap">
         <div className="flex-1 min-w-0 sm:flex-none">
           <Label htmlFor="inviteEmail">Email</Label>
@@ -290,6 +382,16 @@ export function InviteManagement({
                     <Button
                       variant="ghost"
                       size="sm"
+                      className="text-xs h-7"
+                      disabled={actionLoadingId === `email:${inv.id}`}
+                      onClick={() => emailInvitation(inv)}
+                    >
+                      <Mail className="h-3 w-3 mr-1" />
+                      Email invite again
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       className="text-red-600 hover:text-red-700 text-xs h-7"
                       disabled={actionLoadingId === `delete:${inv.id}`}
                       onClick={() => deleteInvitation(inv)}
@@ -371,6 +473,16 @@ export function InviteManagement({
                     <Button
                       variant="ghost"
                       size="sm"
+                      className="text-xs h-7"
+                      disabled={actionLoadingId === `email:${inv.id}`}
+                      onClick={() => emailInvitation(inv)}
+                    >
+                      <Mail className="h-3 w-3 mr-1" />
+                      Email invite again
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       className="text-red-600 hover:text-red-700 text-xs h-7"
                       disabled={actionLoadingId === `delete:${inv.id}`}
                       onClick={() => deleteInvitation(inv)}
@@ -385,6 +497,64 @@ export function InviteManagement({
           </div>
         </div>
       )}
+
+      <Dialog open={!!inviteDialog} onOpenChange={(open) => !open && setInviteDialog(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{inviteDialog?.title}</DialogTitle>
+            <DialogDescription>{inviteDialog?.description}</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <Label htmlFor="inviteLinkValue">Invite link</Label>
+            <Input
+              id="inviteLinkValue"
+              value={inviteDialog?.inviteUrl ?? ""}
+              readOnly
+              onFocus={(event) => event.currentTarget.select()}
+            />
+            {inviteDialog?.deliveryMode === "manual_action_link" && (
+              <p className="text-xs text-muted-foreground">
+                This is the direct Supabase action link. It is the safest link to send manually.
+              </p>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={async () => {
+                if (!inviteDialog?.inviteUrl) {
+                  return;
+                }
+                await navigator.clipboard.writeText(inviteDialog.inviteUrl);
+                toast({ title: "Link copied to clipboard" });
+              }}
+            >
+              <Copy className="h-4 w-4" />
+              Copy link
+            </Button>
+            {inviteDialog?.mailtoUrl && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  window.location.href = inviteDialog.mailtoUrl!;
+                }}
+              >
+                <Mail className="h-4 w-4" />
+                Open mail draft
+              </Button>
+            )}
+            {inviteDialog?.inviteUrl && (
+              <Button asChild>
+                <a href={inviteDialog.inviteUrl} target="_blank" rel="noreferrer">
+                  Open link
+                </a>
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

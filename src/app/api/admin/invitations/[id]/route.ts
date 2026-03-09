@@ -4,14 +4,15 @@ import { addDays } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
-import { getInvitationUrls } from "@/lib/invitations";
 import {
+  emailInvitationLink,
+  getManualInvitationDelivery,
   invitationInclude,
   serializeInvitation,
 } from "@/lib/admin-invitations";
 
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const admin = await requirePermission("send_invites");
@@ -46,8 +47,18 @@ export async function POST(
     include: invitationInclude,
   });
 
-  const urls = await getInvitationUrls(refreshed.email, refreshed.token);
-  const emailSent = false;
+  const body = (await request.json().catch(() => ({}))) as { delivery?: "link" | "email" };
+  const delivery = body.delivery ?? "link";
+  const deliveryResult = delivery === "email"
+    ? await emailInvitationLink({
+        email: refreshed.email,
+        token: refreshed.token,
+      })
+    : await getManualInvitationDelivery({
+        email: refreshed.email,
+        token: refreshed.token,
+      });
+  const emailSent = "emailSent" in deliveryResult ? deliveryResult.emailSent : false;
 
   await logAudit({
     userId: admin.id,
@@ -60,14 +71,13 @@ export async function POST(
     after: {
       expiresAt: refreshed.expiresAt.toISOString(),
       emailSent,
+      delivery,
     },
   });
 
   return NextResponse.json({
     ...serializeInvitation(refreshed),
-    emailSent,
-    inviteUrl: urls.actionUrl,
-    deliveryMode: urls.usedGeneratedLink ? "manual_action_link" : "manual_register_link",
+    ...deliveryResult,
   });
 }
 
@@ -97,12 +107,10 @@ export async function GET(
     );
   }
 
-  const urls = await getInvitationUrls(invitation.email, invitation.token);
-
-  return NextResponse.json({
-    inviteUrl: urls.actionUrl,
-    deliveryMode: urls.usedGeneratedLink ? "manual_action_link" : "manual_register_link",
-  });
+  return NextResponse.json(await getManualInvitationDelivery({
+    email: invitation.email,
+    token: invitation.token,
+  }));
 }
 
 export async function DELETE(

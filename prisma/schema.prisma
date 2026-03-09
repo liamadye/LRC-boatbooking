@@ -59,6 +59,10 @@ enum ApplicationStatus {
   denied
 }
 
+enum SignupProvider {
+  google
+}
+
 // ─── Squads ─────────────────────────────────────────────────────
 
 model Squad {
@@ -93,6 +97,7 @@ model User {
   privateBoatAccess    PrivateBoatAccess[]
   blackBoatApplications BlackBoatApplication[] @relation("Applicant")
   reviewedApplications  BlackBoatApplication[] @relation("Reviewer")
+  reviewedSignupRequests SignupRequest[]        @relation("SignupRequestReviewer")
   sentInvitations      Invitation[]           @relation("Inviter")
   auditLogs            AuditLog[]
 
@@ -239,6 +244,26 @@ model BookingWeek {
   createdAt   DateTime  @default(now()) @map("created_at")
 
   @@map("booking_weeks")
+}
+
+// ─── Signup Requests ───────────────────────────────────────────
+
+model SignupRequest {
+  id             String            @id @default(uuid())
+  email          String            @unique
+  fullName       String?           @map("full_name")
+  provider       SignupProvider
+  supabaseUserId String?           @unique @map("supabase_user_id")
+  status         ApplicationStatus @default(pending)
+  reviewedBy     String?           @map("reviewed_by")
+  reviewedAt     DateTime?         @map("reviewed_at")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  reviewer User? @relation("SignupRequestReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@map("signup_requests")
 }
 
 // ─── Invitations ───────────────────────────────────────────────

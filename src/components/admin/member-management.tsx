@@ -50,7 +50,7 @@ export function MemberManagement({
 
   async function deleteUser(userId: string, fullName: string) {
     const confirmed = window.confirm(
-      `Delete user "${fullName}"? This also removes their bookings, invitations, and squad memberships.`
+      `Delete user "${fullName}"? This also removes their Supabase login, bookings, invitations, squad memberships, and pending signup requests.`
     );
     if (!confirmed) {
       return;
@@ -62,7 +62,13 @@ export function MemberManagement({
     const body = await res.json();
 
     if (res.ok) {
-      toast({ title: "Member deleted" });
+      toast({
+        title: body.authUserDeleted === false ? "Member deleted (no Supabase user found)" : "Member deleted",
+        description:
+          body.authUserDeleted === false
+            ? "App data was removed. There was no matching Supabase Auth user to delete."
+            : undefined,
+      });
       router.refresh();
     } else {
       toast({

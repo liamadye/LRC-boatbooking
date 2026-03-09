@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
+import { deleteSupabaseAuthUserByEmail } from "@/lib/supabase/admin-users";
 
 export async function PATCH(
   request: NextRequest,
@@ -69,28 +70,53 @@ export async function DELETE(
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  await prisma.$transaction(async (tx) => {
-    // Clear FK references before deleting the user row.
-    await tx.boat.updateMany({
-      where: { ownerUserId: id },
-      data: { ownerUserId: null },
-    });
-    await tx.blackBoatApplication.updateMany({
-      where: { reviewedBy: id },
-      data: { reviewedBy: null },
-    });
-
-    await tx.booking.deleteMany({ where: { userId: id } });
-    await tx.userSquad.deleteMany({ where: { userId: id } });
-    await tx.blackBoatApplication.deleteMany({ where: { userId: id } });
-    await tx.invitation.deleteMany({
-      where: {
-        OR: [{ invitedBy: id }, { email: user.email }],
+  let authDeletion;
+  try {
+    authDeletion = await deleteSupabaseAuthUserByEmail(user.email);
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : "Failed to delete Supabase Auth user.",
       },
+      { status: 502 }
+    );
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Clear FK references before deleting the user row.
+      await tx.boat.updateMany({
+        where: { ownerUserId: id },
+        data: { ownerUserId: null },
+      });
+      await tx.blackBoatApplication.updateMany({
+        where: { reviewedBy: id },
+        data: { reviewedBy: null },
+      });
+
+      await tx.booking.deleteMany({ where: { userId: id } });
+      await tx.userSquad.deleteMany({ where: { userId: id } });
+      await tx.blackBoatApplication.deleteMany({ where: { userId: id } });
+      await tx.signupRequest.deleteMany({ where: { email: user.email } });
+      await tx.invitation.deleteMany({
+        where: {
+          OR: [{ invitedBy: id }, { email: user.email }],
+        },
+      });
+      await tx.auditLog.deleteMany({ where: { userId: id } });
+      await tx.user.delete({ where: { id } });
     });
-    await tx.auditLog.deleteMany({ where: { userId: id } });
-    await tx.user.delete({ where: { id } });
-  });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? `Supabase Auth user was deleted, but app cleanup failed: ${error.message}`
+            : "Supabase Auth user was deleted, but app cleanup failed.",
+      },
+      { status: 500 }
+    );
+  }
 
   await logAudit({
     userId: admin.id,
@@ -102,8 +128,14 @@ export async function DELETE(
       fullName: user.fullName,
       role: user.role,
       memberType: user.memberType,
+      authUserDeleted: authDeletion.deleted,
+      authUserId: authDeletion.authUserId,
     },
   });
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({
+    success: true,
+    authUserDeleted: authDeletion.deleted,
+    authUserId: authDeletion.authUserId,
+  });
 }
