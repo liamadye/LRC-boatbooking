@@ -57,6 +57,18 @@ function AuthCallbackHandler() {
       window.location.replace(path);
     }
 
+    function isRecoverablePkceExchangeError(error: unknown) {
+      if (!(error instanceof Error)) {
+        return false;
+      }
+
+      if ("code" in error && error.code === "pkce_code_verifier_not_found") {
+        return true;
+      }
+
+      return error.message.includes("PKCE code verifier not found in storage");
+    }
+
     async function finishWithSession() {
       const {
         data: { session },
@@ -114,6 +126,15 @@ function AuthCallbackHandler() {
           setStatus("Exchanging sign-in code...");
           const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
           if (exchangeError) {
+            const {
+              data: { session },
+            } = await supabase.auth.getSession();
+
+            if (session && isRecoverablePkceExchangeError(exchangeError)) {
+              await finishWithSession();
+              return;
+            }
+
             throw exchangeError;
           }
           await finishWithSession();
