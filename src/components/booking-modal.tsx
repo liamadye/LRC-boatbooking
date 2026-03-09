@@ -121,6 +121,23 @@ export function BookingModal({
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
 
+  function handleDaytimeStartChange(value: string) {
+    setDaytimeStart(value);
+    // Auto-set end time to 90 minutes after start (or end of slot, whichever is shorter)
+    const startMins = value ? parseDaytimeTime(value) : null;
+    if (startMins != null && endSlot === 7) {
+      const autoEndMins = Math.min(startMins + 90, 990); // 990 = 4:30pm
+      const autoEnd = getDaytimeOptionForMinutes(autoEndMins);
+      if (autoEnd) {
+        setDaytimeEnd(autoEnd);
+      } else {
+        // If exact 90-min mark isn't a valid option, find the closest earlier one
+        const closest = getDaytimeOptionForMinutes(autoEndMins - (autoEndMins % 30));
+        if (closest) setDaytimeEnd(closest);
+      }
+    }
+  }
+
   function handleBookingModeChange(nextMode: "person" | "squad") {
     setBookingMode(nextMode);
 
@@ -229,9 +246,14 @@ export function BookingModal({
   }
 
   function buildOptimisticBooking(payload: BookingPayload): SerializedBooking {
-    const optimisticId =
-      globalThis.crypto?.randomUUID?.() ??
-      `pending-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    let optimisticId: string;
+    try {
+      optimisticId =
+        globalThis.crypto?.randomUUID?.() ??
+        `pending-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    } catch {
+      optimisticId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    }
     const squad = payload.squadId
       ? user.squads.find((entry) => entry.id === payload.squadId) ?? null
       : null;
@@ -284,7 +306,12 @@ export function BookingModal({
           ...payload,
         }),
       });
-      const data = await res.json();
+      let data: unknown;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
       pendingToast.dismiss();
 
       if (!res.ok) {
@@ -351,7 +378,12 @@ export function BookingModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(submission.payload),
       });
-      const data = await res.json();
+      let data: unknown;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
 
       if (!res.ok) {
         setErrors([getErrorMessage(data, "Failed to update booking.")]);
@@ -535,7 +567,7 @@ export function BookingModal({
                     id="startTime"
                     className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-base"
                     value={daytimeStart}
-                    onChange={(e) => setDaytimeStart(e.target.value)}
+                    onChange={(e) => handleDaytimeStartChange(e.target.value)}
                   >
                     <option value="">8:00am</option>
                     {DAYTIME_TIMES.map((t) => (
