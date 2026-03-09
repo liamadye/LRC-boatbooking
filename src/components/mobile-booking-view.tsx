@@ -19,7 +19,6 @@ type TabType = "shells" | "tinnies" | "oars" | "gym";
 type MobileFilters = {
   boatType: "all" | "8+" | "4s" | "2s" | "1x";
   classification: "all" | "black" | "green";
-  availability: "all" | "available";
 };
 
 const BOAT_TYPE_FILTERS = [
@@ -63,7 +62,6 @@ export function MobileBookingView({
   const [filters, setFilters] = useState<MobileFilters>({
     boatType: "all",
     classification: "all",
-    availability: "all",
   });
   const [showFilters, setShowFilters] = useState(false);
 
@@ -72,7 +70,6 @@ export function MobileBookingView({
   const activeFilterCount = showFilterBar ? [
     filters.boatType !== "all",
     filters.classification !== "all",
-    filters.availability !== "all",
   ].filter(Boolean).length : 0;
 
   // Build resource rows based on tab
@@ -170,7 +167,6 @@ export function MobileBookingView({
       if (filters.classification !== "all") {
         if (row.classification !== filters.classification) return false;
       }
-      if (row.status === "not_in_use" && filters.availability === "available") return false;
       return true;
     });
   }, [resourceRows, filters, showFilterBar]);
@@ -225,50 +221,30 @@ export function MobileBookingView({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                    Classification
-                  </label>
-                  <select
-                    className="mt-1 w-full text-base border rounded px-2 py-2 min-h-[44px]"
-                    value={filters.classification}
-                    onChange={(e) =>
-                      setFilters((prev) => ({
-                        ...prev,
-                        classification: e.target.value as MobileFilters["classification"],
-                      }))
-                    }
-                  >
-                    <option value="all">All boats</option>
-                    <option value="green">Green (open)</option>
-                    <option value="black">Black (restricted)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                    Availability
-                  </label>
-                  <select
-                    className="mt-1 w-full text-base border rounded px-2 py-2 min-h-[44px]"
-                    value={filters.availability}
-                    onChange={(e) =>
-                      setFilters((prev) => ({
-                        ...prev,
-                        availability: e.target.value as MobileFilters["availability"],
-                      }))
-                    }
-                  >
-                    <option value="all">All</option>
-                    <option value="available">Available only</option>
-                  </select>
-                </div>
+              <div>
+                <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  Classification
+                </label>
+                <select
+                  className="mt-1 w-full text-base border rounded px-2 py-2 min-h-[44px]"
+                  value={filters.classification}
+                  onChange={(e) =>
+                    setFilters((prev) => ({
+                      ...prev,
+                      classification: e.target.value as MobileFilters["classification"],
+                    }))
+                  }
+                >
+                  <option value="all">All boats</option>
+                  <option value="green">Green (open)</option>
+                  <option value="black">Black (restricted)</option>
+                </select>
               </div>
 
               {activeFilterCount > 0 && (
                 <button
                   onClick={() =>
-                    setFilters({ boatType: "all", classification: "all", availability: "all" })
+                    setFilters({ boatType: "all", classification: "all" })
                   }
                   className="text-xs text-blue-600 underline"
                 >
@@ -283,16 +259,16 @@ export function MobileBookingView({
       {/* Horizontal scroll grid — same layout as desktop */}
       <div className="overflow-x-auto rounded-lg border bg-white">
         <table className="w-full text-sm">
-          <thead>
+          <thead className="sticky top-0 z-20">
             <tr className="border-b bg-gray-50">
-              <th scope="col" className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left font-medium min-w-[140px]">
+              <th scope="col" className="sticky left-0 z-30 bg-gray-50 px-3 py-2 text-left font-medium min-w-[140px]">
                 {tab === "shells" ? "Boat" : tab === "tinnies" ? "Tinny" : tab === "oars" ? "Oar Set" : "Equipment"}
               </th>
               {TIME_SLOTS.map((ts) => (
                 <th
                   scope="col"
                   key={ts.slot}
-                  className="px-1.5 py-2 text-center font-medium min-w-[90px] text-xs"
+                  className="bg-gray-50 px-1.5 py-2 text-center font-medium min-w-[90px] text-xs"
                 >
                   {ts.label}
                 </th>
@@ -320,8 +296,8 @@ export function MobileBookingView({
                   <tr key={row.id} className={cn("border-t", isNotInUse && "opacity-50")}>
                     <td className="sticky left-0 z-10 bg-white px-3 py-1.5 font-medium">
                       <div className="flex items-center gap-1.5">
-                        {isBlack && <Circle className="h-3 w-3 flex-shrink-0 fill-gray-800 text-gray-800" />}
-                        {!isBlack && !isPrivate && tab === "shells" && <Circle className="h-3 w-3 flex-shrink-0 fill-green-500 text-green-500" />}
+                        {isBlack && <Circle className="h-3 w-3 flex-shrink-0 fill-gray-800 text-gray-800" style={{ aspectRatio: "1/1" }} />}
+                        {!isBlack && !isPrivate && tab === "shells" && <Circle className="h-3 w-3 flex-shrink-0 fill-green-500 text-green-500" style={{ aspectRatio: "1/1" }} />}
                         {isPrivate && <Lock className="h-3 w-3 flex-shrink-0 text-blue-500" />}
                         {isNotInUse && <Ban className="h-3 w-3 flex-shrink-0 text-red-500" />}
                         {row.resourceType === "boat" ? (

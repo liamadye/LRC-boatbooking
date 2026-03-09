@@ -50,8 +50,10 @@ export function BookingDetailPopover({
   const resourceName = boat?.name ?? (equip ? `${equip.type.charAt(0).toUpperCase() + equip.type.slice(1)} ${equip.number}` : oar?.name ?? "Unknown");
 
   const isOwner = booking.userId === user.id;
-  const canCancel = isOwner || can(user.role, "manage_bookings");
-  const canEdit = isOwner || can(user.role, "manage_bookings");
+  const isSquadMember =
+    !!booking.squadId && user.squads.some((s) => s.id === booking.squadId);
+  const canCancel = isOwner || isSquadMember || can(user.role, "manage_bookings");
+  const canEdit = isOwner || isSquadMember || can(user.role, "manage_bookings");
 
   async function handleCancel() {
     setCancelling(true);

@@ -289,9 +289,13 @@ export function BookingModal({
 
       if (!res.ok) {
         onCreateResolved?.(optimisticBooking.id, null);
+        const fallback =
+          res.status === 409
+            ? "This time slot is already booked."
+            : "Failed to create booking.";
         toast({
           title: "Booking failed",
-          description: getErrorMessage(data, "Failed to create booking."),
+          description: getErrorMessage(data, fallback),
           variant: "destructive",
         });
         return;
@@ -306,12 +310,15 @@ export function BookingModal({
         title: "Booking created",
         description: `${target.resourceName} booked successfully.`,
       });
-    } catch {
+    } catch (error) {
       pendingToast.dismiss();
       onCreateResolved?.(optimisticBooking.id, null);
       toast({
         title: "Booking failed",
-        description: "Network error. Please try again.",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Network error. Please try again.",
         variant: "destructive",
       });
     }

@@ -109,8 +109,8 @@ export function BookingManagement() {
         {bookings.length} booking{bookings.length !== 1 ? "s" : ""} found
       </div>
 
-      <div className="rounded-lg border bg-white overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="rounded-lg border bg-white overflow-x-auto">
+        <table className="w-full text-sm min-w-[700px]">
           <thead>
             <tr className="border-b bg-gray-50">
               <th className="px-3 py-2 text-left font-medium">Date</th>

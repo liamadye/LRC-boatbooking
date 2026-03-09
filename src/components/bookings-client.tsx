@@ -313,25 +313,27 @@ export function BookingsClient({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <h1 className="text-lg sm:text-xl font-bold">
-          Bookings — W/C {format(weekStartObj, "d MMM yyyy")}
-        </h1>
-        {weekData.bookingWeek?.pymbleNotes && (
-          <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-1.5 text-sm text-amber-800">
-            {weekData.bookingWeek.pymbleNotes}
-          </div>
-        )}
+      <div className="sticky top-0 z-40 bg-background pb-3 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <h1 className="text-lg sm:text-xl font-bold">
+            Bookings — W/C {format(weekStartObj, "d MMM yyyy")}
+          </h1>
+          {weekData.bookingWeek?.pymbleNotes && (
+            <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-1.5 text-sm text-amber-800">
+              {weekData.bookingWeek.pymbleNotes}
+            </div>
+          )}
+        </div>
+
+        <WeekNav
+          weekDays={weekDays}
+          selectedDate={selectedDateObj}
+          onSelectDate={handleSelectDate}
+          loading={loadingWeek}
+        />
+
+        <TotalsBar inShed={totals.inShed} rowing={totals.rowing} />
       </div>
-
-      <WeekNav
-        weekDays={weekDays}
-        selectedDate={selectedDateObj}
-        onSelectDate={handleSelectDate}
-        loading={loadingWeek}
-      />
-
-      <TotalsBar inShed={totals.inShed} rowing={totals.rowing} />
 
       <Tabs defaultValue="shells">
         <TabsList>
