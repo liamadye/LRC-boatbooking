@@ -372,11 +372,24 @@ export function BookingModal({
       return;
     }
 
+    // Close modal immediately and update in background
+    void handleEditInBackground(submission.payload);
+  }
+
+  async function handleEditInBackground(payload: BookingPayload) {
+    const pendingToast = toast({
+      title: "Saving changes",
+      description: `Updating ${target.resourceName}...`,
+      duration: 20000,
+    });
+
+    onClose();
+
     try {
-      const res = await fetch(`/api/bookings/${editingBooking.id}`, {
+      const res = await fetch(`/api/bookings/${editingBooking!.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(submission.payload),
+        body: JSON.stringify(payload),
       });
       let data: unknown;
       try {
@@ -384,22 +397,32 @@ export function BookingModal({
       } catch {
         data = null;
       }
+      pendingToast.dismiss();
 
       if (!res.ok) {
-        setErrors([getErrorMessage(data, "Failed to update booking.")]);
+        toast({
+          title: "Update failed",
+          description: getErrorMessage(data, "Failed to update booking."),
+          variant: "destructive",
+        });
         return;
       }
 
+      onSaved?.(data as SerializedBooking);
       toast({
         title: "Booking updated",
         description: `${target.resourceName} updated successfully.`,
       });
-      onSaved?.(data as SerializedBooking);
-      onClose();
-    } catch {
-      setErrors(["Network error. Please try again."]);
-    } finally {
-      setLoading(false);
+    } catch (error) {
+      pendingToast.dismiss();
+      toast({
+        title: "Update failed",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Network error. Please try again.",
+        variant: "destructive",
+      });
     }
   }
 

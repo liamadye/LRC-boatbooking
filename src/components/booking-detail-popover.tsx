@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -41,7 +40,6 @@ export function BookingDetailPopover({
   onEdit?: (booking: SerializedBooking) => void;
 }) {
   const { toast } = useToast();
-  const [cancelling, setCancelling] = useState(false);
 
   const boat = boats.find((b) => b.id === booking.boatId);
   const equip = equipment.find((e) => e.id === booking.equipmentId);
@@ -55,22 +53,30 @@ export function BookingDetailPopover({
   const canCancel = isOwner || isSquadMember || can(user.role, "manage_bookings");
   const canEdit = isOwner || isSquadMember || can(user.role, "manage_bookings");
 
-  async function handleCancel() {
-    setCancelling(true);
+  function handleCancel() {
+    // Close immediately, delete in background
+    onDeleted?.(booking.id);
+    onClose();
 
-    const res = await fetch(`/api/bookings/${booking.id}`, {
-      method: "DELETE",
+    const pendingToast = toast({
+      title: "Cancelling booking",
+      description: `Removing ${resourceName}...`,
+      duration: 20000,
     });
 
-    if (res.ok) {
-      toast({ title: "Booking cancelled" });
-      onDeleted?.(booking.id);
-      onClose();
-    } else {
-      toast({ title: "Failed to cancel booking", variant: "destructive" });
-    }
-
-    setCancelling(false);
+    fetch(`/api/bookings/${booking.id}`, { method: "DELETE" })
+      .then((res) => {
+        pendingToast.dismiss();
+        if (res.ok) {
+          toast({ title: "Booking cancelled" });
+        } else {
+          toast({ title: "Failed to cancel booking", variant: "destructive" });
+        }
+      })
+      .catch(() => {
+        pendingToast.dismiss();
+        toast({ title: "Failed to cancel booking", variant: "destructive" });
+      });
   }
 
   return (
@@ -141,9 +147,8 @@ export function BookingDetailPopover({
               variant="destructive"
               size="sm"
               onClick={handleCancel}
-              disabled={cancelling}
             >
-              {cancelling ? "Cancelling..." : "Cancel Booking"}
+              Cancel Booking
             </Button>
           )}
         </div>
