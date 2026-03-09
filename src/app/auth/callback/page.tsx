@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { clearAuthRedirectState, getHashAuthParams, hydrateSessionFromHash } from "@/lib/supabase/browser-auth";
+import { getHashAuthParams, hydrateSessionFromHash } from "@/lib/supabase/browser-auth";
 
 export default function AuthCallbackPage() {
   return (
@@ -61,8 +61,6 @@ function AuthCallbackHandler() {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-
-      clearAuthRedirectState();
 
       if (flowType === "recovery") {
         redirectTo("/reset-password/update");
@@ -148,6 +146,15 @@ function AuthCallbackHandler() {
           }
 
           throw new Error("This sign-in link is invalid or has expired.");
+        }
+
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (session) {
+          await finishWithSession();
+          return;
         }
 
         throw new Error("No sign-in credentials were provided.");
