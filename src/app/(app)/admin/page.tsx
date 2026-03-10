@@ -5,6 +5,7 @@ import { getAuthenticatedUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { invitationInclude, serializeInvitation } from "@/lib/admin-invitations";
 import { serializeSignupRequest, signupRequestInclude } from "@/lib/signup-requests";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export default async function AdminPage() {
   const user = await getAuthenticatedUser();
@@ -41,6 +42,33 @@ export default async function AdminPage() {
     }),
   ]);
 
+  // Fetch last sign-in times from Supabase Auth
+  const lastSignInMap = new Map<string, string>();
+  try {
+    const adminClient = createAdminClient();
+    if (adminClient) {
+      let page = 1;
+      const perPage = 1000;
+      let hasMore = true;
+      while (hasMore) {
+        const { data } = await adminClient.auth.admin.listUsers({ page, perPage });
+        if (data?.users) {
+          for (const authUser of data.users) {
+            if (authUser.email && authUser.last_sign_in_at) {
+              lastSignInMap.set(authUser.email.toLowerCase(), authUser.last_sign_in_at);
+            }
+          }
+          hasMore = "nextPage" in data && !!data.nextPage && data.users.length === perPage;
+        } else {
+          hasMore = false;
+        }
+        page++;
+      }
+    }
+  } catch {
+    // Silently continue without last sign-in data
+  }
+
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-bold">Admin Panel</h1>
@@ -54,6 +82,7 @@ export default async function AdminPage() {
         users={users.map((u) => ({
           ...u,
           weightKg: u.weightKg ? Number(u.weightKg) : null,
+          lastSignInAt: lastSignInMap.get(u.email.toLowerCase()) ?? null,
           squads: u.squads.map((us) => ({
             id: us.squad.id,
             name: us.squad.name,

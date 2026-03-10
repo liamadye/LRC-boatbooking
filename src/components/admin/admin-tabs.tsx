@@ -25,6 +25,7 @@ type AdminUser = {
   memberType: string;
   weightKg: number | null;
   hasBlackBoatEligibility: boolean;
+  lastSignInAt: string | null;
   squads: { id: string; name: string }[];
 };
 

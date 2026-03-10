@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { SignupRequestReview } from "@/components/admin/signup-request-review";
-import { Copy, Mail, RefreshCw, Trash2 } from "lucide-react";
+import { Copy, Mail, RefreshCw, Trash2, ChevronDown, ChevronRight } from "lucide-react";
 import type { InvitationSummary, SignupRequestSummary, SquadSummary } from "@/lib/types";
 
 type InviteLinkResponse = {
@@ -38,6 +38,30 @@ type InviteDialogState = {
   deliveryMode?: "manual_action_link" | "manual_register_link";
 };
 
+/** Copy text to clipboard with fallback for mobile Safari (which blocks
+ *  async clipboard writes outside of the original user-gesture stack). */
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Fallback: use a hidden textarea + execCommand
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    let ok = false;
+    try {
+      ok = document.execCommand("copy");
+    } catch { /* ignore */ }
+    document.body.removeChild(textarea);
+    return ok;
+  }
+}
+
 export function InviteManagement({
   invitations,
   signupRequests,
@@ -57,6 +81,16 @@ export function InviteManagement({
   const [loading, setLoading] = useState(false);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [inviteDialog, setInviteDialog] = useState<InviteDialogState | null>(null);
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set(["accepted"]));
+
+  function toggleSection(section: string) {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(section)) next.delete(section);
+      else next.add(section);
+      return next;
+    });
+  }
 
   useEffect(() => {
     setInviteRows(invitations);
@@ -64,6 +98,14 @@ export function InviteManagement({
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
+
+    if (selectedSquadIds.length === 0) {
+      const confirmed = window.confirm(
+        "No squad has been assigned to this invitation. Are you sure you want to continue without assigning a squad?"
+      );
+      if (!confirmed) return;
+    }
+
     setLoading(true);
 
     const res = await fetch("/api/admin/invitations", {
@@ -330,10 +372,15 @@ export function InviteManagement({
 
       {pending.length > 0 && (
         <div>
-          <h3 className="text-sm font-semibold text-muted-foreground mb-2">
+          <button
+            type="button"
+            onClick={() => toggleSection("pending")}
+            className="flex items-center gap-1 text-sm font-semibold text-muted-foreground mb-2 hover:text-foreground transition-colors"
+          >
+            {collapsedSections.has("pending") ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             Pending ({pending.length})
-          </h3>
-          <div className="space-y-2">
+          </button>
+          {!collapsedSections.has("pending") && <div className="space-y-2">
             {pending.map((inv) => (
               <Card key={inv.id}>
                 <CardContent className="py-3">
@@ -403,16 +450,21 @@ export function InviteManagement({
                 </CardContent>
               </Card>
             ))}
-          </div>
+          </div>}
         </div>
       )}
 
       {accepted.length > 0 && (
         <div>
-          <h3 className="text-sm font-semibold text-muted-foreground mb-2">
+          <button
+            type="button"
+            onClick={() => toggleSection("accepted")}
+            className="flex items-center gap-1 text-sm font-semibold text-muted-foreground mb-2 hover:text-foreground transition-colors"
+          >
+            {collapsedSections.has("accepted") ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             Accepted ({accepted.length})
-          </h3>
-          <div className="space-y-2">
+          </button>
+          {!collapsedSections.has("accepted") && <div className="space-y-2">
             {accepted.map((inv) => (
               <Card key={inv.id}>
                 <CardContent className="flex items-center justify-between py-3">
@@ -431,16 +483,21 @@ export function InviteManagement({
                 </CardContent>
               </Card>
             ))}
-          </div>
+          </div>}
         </div>
       )}
 
       {expired.length > 0 && (
         <div>
-          <h3 className="text-sm font-semibold text-muted-foreground mb-2">
+          <button
+            type="button"
+            onClick={() => toggleSection("expired")}
+            className="flex items-center gap-1 text-sm font-semibold text-muted-foreground mb-2 hover:text-foreground transition-colors"
+          >
+            {collapsedSections.has("expired") ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             Expired ({expired.length})
-          </h3>
-          <div className="space-y-2">
+          </button>
+          {!collapsedSections.has("expired") && <div className="space-y-2">
             {expired.map((inv) => (
               <Card key={inv.id}>
                 <CardContent className="py-3">
@@ -494,7 +551,7 @@ export function InviteManagement({
                 </CardContent>
               </Card>
             ))}
-          </div>
+          </div>}
         </div>
       )}
 
@@ -527,8 +584,11 @@ export function InviteManagement({
                 if (!inviteDialog?.inviteUrl) {
                   return;
                 }
-                await navigator.clipboard.writeText(inviteDialog.inviteUrl);
-                toast({ title: "Link copied to clipboard" });
+                const copied = await copyToClipboard(inviteDialog.inviteUrl);
+                toast({
+                  title: copied ? "Link copied to clipboard" : "Could not copy automatically",
+                  description: copied ? undefined : "Select and copy the link from the input above.",
+                });
               }}
             >
               <Copy className="h-4 w-4" />

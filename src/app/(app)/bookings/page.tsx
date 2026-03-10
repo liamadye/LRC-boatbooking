@@ -68,6 +68,14 @@ export default async function BookingsPage({
     avgWeightKg: b.avgWeightKg ? Number(b.avgWeightKg) : null,
   }));
 
+  // Admins can book on behalf of any squad
+  const isAdmin = userProfile.role === "admin";
+  let allSquads: { id: string; name: string }[] | null = null;
+  if (isAdmin) {
+    const squads = await prisma.squad.findMany({ orderBy: { name: "asc" } });
+    allSquads = squads.map((s) => ({ id: s.id, name: s.name }));
+  }
+
   const serializedUser = {
     id: userProfile.id,
     email: userProfile.email,
@@ -76,7 +84,7 @@ export default async function BookingsPage({
     memberType: userProfile.memberType,
     weightKg: userProfile.weightKg ? Number(userProfile.weightKg) : null,
     hasBlackBoatEligibility: userProfile.hasBlackBoatEligibility,
-    squads: userProfile.squads.map((us) => ({
+    squads: allSquads ?? userProfile.squads.map((us) => ({
       id: us.squad.id,
       name: us.squad.name,
     })),

@@ -16,16 +16,24 @@ export async function GET() {
 
   const user = await prisma.user.findUnique({
     where: { email: authUser.email! },
+    include: { squads: { select: { squadId: true } } },
   });
 
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
+  const userSquadIds = user.squads.map((s) => s.squadId);
+
   const bookings = await prisma.booking.findMany({
     where: {
-      userId: user.id,
       date: { gte: getSydneyToday() },
+      OR: [
+        { userId: user.id },
+        ...(userSquadIds.length > 0
+          ? [{ squadId: { in: userSquadIds } }]
+          : []),
+      ],
     },
     include: {
       boat: { select: { name: true, boatType: true } },

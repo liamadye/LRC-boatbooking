@@ -5,7 +5,7 @@ import { validateBooking, isWeekend } from "@/lib/validation";
 import { bookingsOverlap, getDefaultEndMinutes, getDefaultStartMinutes } from "@/lib/booking-times";
 import { can } from "@/lib/permissions";
 import { logAudit } from "@/lib/audit";
-import { serializeBooking, supportsSquadBooking } from "@/lib/booking-utils";
+import { serializeBooking } from "@/lib/booking-utils";
 
 export async function DELETE(
   request: NextRequest,
@@ -38,8 +38,15 @@ export async function DELETE(
     return NextResponse.json({ error: "Booking not found" }, { status: 404 });
   }
 
-  // Only the booker or admins can delete
-  if (booking.userId !== user.id && !can(user.role, "manage_bookings")) {
+  // Only the booker, squad members (for squad bookings), or admins can delete
+  const isDeleteSquadMember =
+    !!booking.squadId &&
+    user.squads.some((entry) => entry.squad.id === booking.squadId);
+  if (
+    booking.userId !== user.id &&
+    !isDeleteSquadMember &&
+    !can(user.role, "manage_bookings")
+  ) {
     return NextResponse.json(
       { error: "You can only cancel your own bookings" },
       { status: 403 }
@@ -93,7 +100,15 @@ export async function PATCH(
     return NextResponse.json({ error: "Booking not found" }, { status: 404 });
   }
 
-  if (booking.userId !== user.id && !can(user.role, "manage_bookings")) {
+  // Only the booker, squad members (for squad bookings), or admins can edit
+  const isEditSquadMember =
+    !!booking.squadId &&
+    user.squads.some((entry) => entry.squad.id === booking.squadId);
+  if (
+    booking.userId !== user.id &&
+    !isEditSquadMember &&
+    !can(user.role, "manage_bookings")
+  ) {
     return NextResponse.json(
       { error: "You can only edit your own bookings" },
       { status: 403 }
@@ -126,14 +141,16 @@ export async function PATCH(
 
     if (boat) {
       if (nextSquadId) {
-        if (!supportsSquadBooking(boat.boatType)) {
-          return NextResponse.json(
-            { error: "Squad bookings are only available for 4s and 8s." },
-            { status: 400 }
-          );
+        bookingSquad = user.squads.find((entry) => entry.squad.id === nextSquadId)?.squad ?? null;
+
+        // Admins can book for any squad
+        if (!bookingSquad && user.role === "admin") {
+          bookingSquad = await prisma.squad.findUnique({
+            where: { id: nextSquadId },
+            select: { id: true, name: true },
+          });
         }
 
-        bookingSquad = user.squads.find((entry) => entry.squad.id === nextSquadId)?.squad ?? null;
         if (!bookingSquad) {
           return NextResponse.json(
             { error: "You can only book on behalf of a squad you belong to." },

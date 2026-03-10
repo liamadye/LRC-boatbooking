@@ -14,6 +14,7 @@ type AdminUser = { id: string; fullName: string; email: string };
 
 export function BoatManagement({
   boats,
+  squads,
   users,
 }: {
   boats: BoatWithRelations[];
@@ -24,6 +25,21 @@ export function BoatManagement({
   const { toast } = useToast();
   const [expandedBoatId, setExpandedBoatId] = useState<string | null>(null);
   const [savingAccess, setSavingAccess] = useState(false);
+
+  async function updateResponsibleSquad(boatId: string, squadId: string | null) {
+    const res = await fetch(`/api/admin/boats/${boatId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ responsibleSquadId: squadId || null }),
+    });
+
+    if (res.ok) {
+      toast({ title: "Responsible squad updated" });
+      router.refresh();
+    } else {
+      toast({ title: "Failed to update squad", variant: "destructive" });
+    }
+  }
 
   async function toggleStatus(boatId: string, currentStatus: string) {
     const newStatus = currentStatus === "available" ? "not_in_use" : "available";
@@ -92,32 +108,45 @@ export function BoatManagement({
         return (
           <Card key={boat.id} className={boat.status === "not_in_use" ? "opacity-60" : ""}>
             <CardContent className="py-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div className="flex items-center gap-3 min-w-0">
                   {boat.classification === "black" ? (
-                    <Circle className="h-4 w-4 fill-gray-800 text-gray-800" />
+                    <Circle className="h-4 w-4 flex-shrink-0 fill-gray-800 text-gray-800" style={{ aspectRatio: "1/1" }} />
                   ) : (
-                    <Circle className="h-4 w-4 fill-green-500 text-green-500" />
+                    <Circle className="h-4 w-4 flex-shrink-0 fill-green-500 text-green-500" style={{ aspectRatio: "1/1" }} />
                   )}
-                  <div>
-                    <div className="font-medium">
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">
                       {boat.name}
                       {boat.category === "private" && (
                         <Lock className="inline h-3 w-3 ml-1 text-blue-500" />
                       )}
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      {boat.boatType} — {boat.responsibleSquad?.name ?? boat.responsiblePerson ?? "Unassigned"}
-                      {boat.avgWeightKg && ` — ${boat.avgWeightKg}kg`}
+                    <div className="text-xs text-muted-foreground flex items-center gap-1 flex-wrap">
+                      <span>{boat.boatType}</span>
+                      <span>—</span>
+                      <select
+                        className="text-xs border rounded px-1 py-0.5 bg-transparent hover:bg-gray-50"
+                        value={boat.responsibleSquadId ?? ""}
+                        onChange={(e) => updateResponsibleSquad(boat.id, e.target.value || null)}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <option value="">{boat.responsiblePerson ?? "Unassigned"}</option>
+                        {squads.map((s) => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                      </select>
+                      {boat.avgWeightKg && <span>— {boat.avgWeightKg}kg</span>}
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1 flex-wrap">
                   <Badge variant="outline">{boat.category}</Badge>
                   {isPrivate && (
                     <Button
                       variant="ghost"
                       size="sm"
+                      className="h-8 text-xs px-2"
                       onClick={() => setExpandedBoatId(isExpanded ? null : boat.id)}
                     >
                       <Users className="h-4 w-4 mr-1" />
@@ -132,6 +161,7 @@ export function BoatManagement({
                   <Button
                     variant="ghost"
                     size="sm"
+                    className="h-8 text-xs px-2"
                     onClick={() => toggleClassification(boat.id, boat.classification)}
                   >
                     {boat.classification === "black" ? "Set Green" : "Set Black"}
@@ -139,6 +169,7 @@ export function BoatManagement({
                   <Button
                     variant={boat.status === "not_in_use" ? "default" : "ghost"}
                     size="sm"
+                    className="h-8 text-xs px-2"
                     onClick={() => toggleStatus(boat.id, boat.status)}
                   >
                     {boat.status === "not_in_use" ? "Enable" : "Disable"}

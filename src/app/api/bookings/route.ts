@@ -9,7 +9,6 @@ import { createRateLimiter } from "@/lib/rate-limit";
 import {
   buildBookingWeekPayload,
   serializeBooking,
-  supportsSquadBooking,
 } from "@/lib/booking-utils";
 
 const bookingLimiter = createRateLimiter({ windowMs: 60_000, maxRequests: 20 });
@@ -175,21 +174,16 @@ export async function POST(request: NextRequest) {
 
   let bookingSquad = null;
   if (squadId) {
-    if (resourceType !== "boat" || !boat) {
-      return NextResponse.json(
-        { error: "Squad bookings are only available for boats." },
-        { status: 400 }
-      );
-    }
-
-    if (!supportsSquadBooking(boat.boatType)) {
-      return NextResponse.json(
-        { error: "Squad bookings are only available for 4s and 8s." },
-        { status: 400 }
-      );
-    }
-
     bookingSquad = user.squads.find((entry) => entry.squad.id === squadId)?.squad ?? null;
+
+    // Admins can book for any squad
+    if (!bookingSquad && user.role === "admin") {
+      bookingSquad = await prisma.squad.findUnique({
+        where: { id: squadId },
+        select: { id: true, name: true },
+      });
+    }
+
     if (!bookingSquad) {
       return NextResponse.json(
         { error: "You can only book on behalf of a squad you belong to." },

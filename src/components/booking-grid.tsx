@@ -215,25 +215,25 @@ export function BookingGrid({
       />
 
       {/* Desktop view */}
-      <div className="overflow-x-auto rounded-lg border bg-white hidden md:block">
+      <div className="overflow-auto rounded-lg border bg-white hidden md:block max-h-[calc(100dvh-260px)]">
         <table className="w-full text-sm">
-          <thead>
+          <thead className="sticky top-0 z-20">
             <tr className="border-b bg-gray-50">
-              <th scope="col" className="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left font-medium w-48">
+              <th scope="col" className="sticky left-0 z-30 bg-gray-50 px-3 py-2 text-left font-medium w-48">
                 {tab === "shells" ? "Boat" : tab === "tinnies" ? "Tinny" : tab === "oars" ? "Oar Set" : "Equipment"}
               </th>
               {showBoatColumns && (
                 <>
-                  <th scope="col" className="px-2 py-2 text-left font-medium w-20">Type</th>
-                  <th scope="col" className="px-2 py-2 text-left font-medium w-16">Wt</th>
-                  <th scope="col" className="px-2 py-2 text-left font-medium w-28">Squad</th>
+                  <th scope="col" className="bg-gray-50 px-2 py-2 text-left font-medium w-20">Type</th>
+                  <th scope="col" className="bg-gray-50 px-2 py-2 text-left font-medium w-16">Wt</th>
+                  <th scope="col" className="bg-gray-50 px-2 py-2 text-left font-medium w-28">Squad</th>
                 </>
               )}
               {TIME_SLOTS.map((ts) => (
                 <th
                   scope="col"
                   key={ts.slot}
-                  className="px-2 py-2 text-center font-medium min-w-[110px]"
+                  className="bg-gray-50 px-2 py-2 text-center font-medium min-w-[110px]"
                 >
                   {ts.label}
                 </th>
@@ -498,10 +498,10 @@ const BoatRow = memo(function BoatRow({
       <td className={cn("sticky left-0 z-10 px-3 py-1.5 font-medium", colorClass)}>
         <div className="flex items-center gap-1.5">
           {isBlack && (
-            <span title="Black boat (restricted)"><Circle className="h-3 w-3 fill-gray-800 text-gray-800" aria-hidden="true" /><span className="sr-only">Black boat (restricted)</span></span>
+            <span title="Black boat (restricted)"><Circle className="h-3 w-3 fill-gray-800 text-gray-800" aria-hidden="true" style={{ aspectRatio: "1/1" }} /><span className="sr-only">Black boat (restricted)</span></span>
           )}
           {!isBlack && !isPrivate && (
-            <span title="Green boat (open)"><Circle className="h-3 w-3 fill-green-500 text-green-500" aria-hidden="true" /><span className="sr-only">Green boat (open)</span></span>
+            <span title="Green boat (open)"><Circle className="h-3 w-3 fill-green-500 text-green-500" aria-hidden="true" style={{ aspectRatio: "1/1" }} /><span className="sr-only">Green boat (open)</span></span>
           )}
           {isPrivate && <span title="Private boat"><Lock className="h-3 w-3 text-blue-500" aria-hidden="true" /><span className="sr-only">Private boat</span></span>}
           {isNotInUse && <span title="Not in use"><Ban className="h-3 w-3 text-red-500" aria-hidden="true" /><span className="sr-only">Not in use</span></span>}

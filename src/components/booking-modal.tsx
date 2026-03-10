@@ -19,7 +19,7 @@ import {
   getDefaultStartMinutes,
   parseDaytimeTime,
 } from "@/lib/booking-times";
-import { supportsSquadBooking } from "@/lib/booking-utils";
+
 import { useToast } from "@/hooks/use-toast";
 import type { BoatWithRelations, SerializedBooking, UserProfile } from "@/lib/types";
 
@@ -77,11 +77,7 @@ export function BookingModal({
   const uncoxedCrew = hasCoxOption ? coxedCrew - 1 : coxedCrew;
 
   const maxCrew = boat ? (MAX_CREW[boat.boatType] ?? 1) : 1;
-  const canBookAsSquad =
-    target.resourceType === "boat" &&
-    !!boat &&
-    user.squads.length > 0 &&
-    supportsSquadBooking(boat.boatType);
+  const canBookAsSquad = user.squads.length > 0;
   const matchingSquad = canBookAsSquad
     ? user.squads.find((s) => s.id === editingBooking?.squadId)
     : null;
@@ -120,6 +116,23 @@ export function BookingModal({
   const [notes] = useState(editingBooking?.notes ?? "");
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
+
+  function handleDaytimeStartChange(value: string) {
+    setDaytimeStart(value);
+    // Auto-set end time to 90 minutes after start (or end of slot, whichever is shorter)
+    const startMins = value ? parseDaytimeTime(value) : null;
+    if (startMins != null && endSlot === 7) {
+      const autoEndMins = Math.min(startMins + 90, 990); // 990 = 4:30pm
+      const autoEnd = getDaytimeOptionForMinutes(autoEndMins);
+      if (autoEnd) {
+        setDaytimeEnd(autoEnd);
+      } else {
+        // If exact 90-min mark isn't a valid option, find the closest earlier one
+        const closest = getDaytimeOptionForMinutes(autoEndMins - (autoEndMins % 30));
+        if (closest) setDaytimeEnd(closest);
+      }
+    }
+  }
 
   function handleBookingModeChange(nextMode: "person" | "squad") {
     setBookingMode(nextMode);
@@ -229,9 +242,14 @@ export function BookingModal({
   }
 
   function buildOptimisticBooking(payload: BookingPayload): SerializedBooking {
-    const optimisticId =
-      globalThis.crypto?.randomUUID?.() ??
-      `pending-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    let optimisticId: string;
+    try {
+      optimisticId =
+        globalThis.crypto?.randomUUID?.() ??
+        `pending-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    } catch {
+      optimisticId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    }
     const squad = payload.squadId
       ? user.squads.find((entry) => entry.id === payload.squadId) ?? null
       : null;
@@ -284,14 +302,23 @@ export function BookingModal({
           ...payload,
         }),
       });
-      const data = await res.json();
+      let data: unknown;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
       pendingToast.dismiss();
 
       if (!res.ok) {
         onCreateResolved?.(optimisticBooking.id, null);
+        const fallback =
+          res.status === 409
+            ? "This time slot is already booked."
+            : "Failed to create booking.";
         toast({
           title: "Booking failed",
-          description: getErrorMessage(data, "Failed to create booking."),
+          description: getErrorMessage(data, fallback),
           variant: "destructive",
         });
         return;
@@ -306,12 +333,15 @@ export function BookingModal({
         title: "Booking created",
         description: `${target.resourceName} booked successfully.`,
       });
-    } catch {
+    } catch (error) {
       pendingToast.dismiss();
       onCreateResolved?.(optimisticBooking.id, null);
       toast({
         title: "Booking failed",
-        description: "Network error. Please try again.",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Network error. Please try again.",
         variant: "destructive",
       });
     }
@@ -338,29 +368,57 @@ export function BookingModal({
       return;
     }
 
+    // Close modal immediately and update in background
+    void handleEditInBackground(submission.payload);
+  }
+
+  async function handleEditInBackground(payload: BookingPayload) {
+    const pendingToast = toast({
+      title: "Saving changes",
+      description: `Updating ${target.resourceName}...`,
+      duration: 20000,
+    });
+
+    onClose();
+
     try {
-      const res = await fetch(`/api/bookings/${editingBooking.id}`, {
+      const res = await fetch(`/api/bookings/${editingBooking!.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(submission.payload),
+        body: JSON.stringify(payload),
       });
-      const data = await res.json();
+      let data: unknown;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
+      pendingToast.dismiss();
 
       if (!res.ok) {
-        setErrors([getErrorMessage(data, "Failed to update booking.")]);
+        toast({
+          title: "Update failed",
+          description: getErrorMessage(data, "Failed to update booking."),
+          variant: "destructive",
+        });
         return;
       }
 
+      onSaved?.(data as SerializedBooking);
       toast({
         title: "Booking updated",
         description: `${target.resourceName} updated successfully.`,
       });
-      onSaved?.(data as SerializedBooking);
-      onClose();
-    } catch {
-      setErrors(["Network error. Please try again."]);
-    } finally {
-      setLoading(false);
+    } catch (error) {
+      pendingToast.dismiss();
+      toast({
+        title: "Update failed",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Network error. Please try again.",
+        variant: "destructive",
+      });
     }
   }
 
@@ -528,7 +586,7 @@ export function BookingModal({
                     id="startTime"
                     className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-base"
                     value={daytimeStart}
-                    onChange={(e) => setDaytimeStart(e.target.value)}
+                    onChange={(e) => handleDaytimeStartChange(e.target.value)}
                   >
                     <option value="">8:00am</option>
                     {DAYTIME_TIMES.map((t) => (
