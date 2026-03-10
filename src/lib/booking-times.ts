@@ -21,6 +21,25 @@ export function getDefaultEndMinutes(slot: number) {
   return getSlotRange(slot)?.endMinutes ?? 0;
 }
 
+export function getDefaultBookingRange(slot: number) {
+  const slotRange = getSlotRange(slot);
+  if (!slotRange) {
+    return { endSlot: slot, startMinutes: 0, endMinutes: 0 };
+  }
+
+  const startMinutes = slotRange.startMinutes;
+  const preferredEndMinutes = startMinutes + 90;
+  const matchingEndSlot =
+    TIME_SLOTS.find((entry) => preferredEndMinutes <= entry.endMinutes) ??
+    TIME_SLOTS[TIME_SLOTS.length - 1];
+
+  return {
+    endSlot: matchingEndSlot.slot,
+    startMinutes,
+    endMinutes: Math.min(preferredEndMinutes, matchingEndSlot.endMinutes),
+  };
+}
+
 export function normalizeBookingMinutes(args: BookingTimeLike) {
   return {
     startMinutes: args.startMinutes ?? getDefaultStartMinutes(args.startSlot),

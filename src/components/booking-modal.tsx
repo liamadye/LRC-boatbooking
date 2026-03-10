@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   Dialog,
   DialogContent,
@@ -14,9 +14,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { TIME_SLOTS, MAX_CREW, DAYTIME_TIMES } from "@/lib/constants";
 import {
+  getDefaultBookingRange,
   getDaytimeOptionForMinutes,
   getDefaultEndMinutes,
-  getDefaultStartMinutes,
   parseDaytimeTime,
 } from "@/lib/booking-times";
 
@@ -81,6 +81,10 @@ export function BookingModal({
   const matchingSquad = canBookAsSquad
     ? user.squads.find((s) => s.id === editingBooking?.squadId)
     : null;
+  const defaultRange = useMemo(
+    () => getDefaultBookingRange(target.slot),
+    [target.slot]
+  );
 
   const defaultSquad = matchingSquad ?? (canBookAsSquad ? user.squads[0] : null);
   const defaultToSquad = !!matchingSquad || (canBookAsSquad && !isEditing);
@@ -100,15 +104,15 @@ export function BookingModal({
       : true
   );
   const effectiveCrew = hasCoxOption ? (isCoxed ? coxedCrew : uncoxedCrew) : maxCrew;
-  const [endSlot, setEndSlot] = useState(editingBooking?.endSlot ?? target.slot);
+  const [endSlot, setEndSlot] = useState(editingBooking?.endSlot ?? defaultRange.endSlot);
   const [daytimeStart, setDaytimeStart] = useState(
     target.slot === 7
-      ? getDaytimeOptionForMinutes(editingBooking?.startMinutes ?? null)
+      ? getDaytimeOptionForMinutes(editingBooking?.startMinutes ?? defaultRange.startMinutes)
       : ""
   );
   const [daytimeEnd, setDaytimeEnd] = useState(
-    target.slot === 7 && (editingBooking?.endSlot ?? target.slot) === 7
-      ? getDaytimeOptionForMinutes(editingBooking?.endMinutes ?? null)
+    (editingBooking?.endSlot ?? defaultRange.endSlot) === 7
+      ? getDaytimeOptionForMinutes(editingBooking?.endMinutes ?? defaultRange.endMinutes)
       : ""
   );
   const [isRaceSpecific, setIsRaceSpecific] = useState(editingBooking?.isRaceSpecific ?? false);
@@ -119,20 +123,37 @@ export function BookingModal({
 
   function handleDaytimeStartChange(value: string) {
     setDaytimeStart(value);
-    // Auto-set end time to 90 minutes after start (or end of slot, whichever is shorter)
     const startMins = value ? parseDaytimeTime(value) : null;
     if (startMins != null && endSlot === 7) {
-      const autoEndMins = Math.min(startMins + 90, 990); // 990 = 4:30pm
+      const autoEndMins = Math.min(startMins + 90, getDefaultEndMinutes(7));
       const autoEnd = getDaytimeOptionForMinutes(autoEndMins);
       if (autoEnd) {
         setDaytimeEnd(autoEnd);
       } else {
-        // If exact 90-min mark isn't a valid option, find the closest earlier one
         const closest = getDaytimeOptionForMinutes(autoEndMins - (autoEndMins % 30));
         if (closest) setDaytimeEnd(closest);
       }
     }
   }
+
+  useEffect(() => {
+    if (isEditing || endSlot !== 7) {
+      return;
+    }
+
+    const baseStartMinutes =
+      target.slot === 7
+        ? parseDaytimeTime(daytimeStart) ?? defaultRange.startMinutes
+        : defaultRange.startMinutes;
+    const currentEndMinutes = parseDaytimeTime(daytimeEnd);
+
+    if (currentEndMinutes != null && currentEndMinutes > baseStartMinutes) {
+      return;
+    }
+
+    const nextEndMinutes = Math.min(baseStartMinutes + 90, getDefaultEndMinutes(7));
+    setDaytimeEnd(getDaytimeOptionForMinutes(nextEndMinutes));
+  }, [daytimeEnd, daytimeStart, defaultRange.startMinutes, endSlot, isEditing, target.slot]);
 
   function handleBookingModeChange(nextMode: "person" | "squad") {
     setBookingMode(nextMode);
@@ -162,29 +183,33 @@ export function BookingModal({
   }
 
   function buildPayload(): BookingSubmission {
-    let startMinutes = getDefaultStartMinutes(target.slot);
+    let startMinutes = defaultRange.startMinutes;
     let endMinutes = getDefaultEndMinutes(endSlot);
 
     if (target.slot === 7) {
-      const parsedStart = daytimeStart ? parseDaytimeTime(daytimeStart) : getDefaultStartMinutes(7);
+      const parsedStart = daytimeStart
+        ? parseDaytimeTime(daytimeStart)
+        : defaultRange.startMinutes;
       if (parsedStart == null) {
         return { errors: ["Please select a valid daytime start time."] };
       }
 
       startMinutes = parsedStart;
+    }
 
-      if (endSlot === 7) {
-        const parsedEnd = daytimeEnd ? parseDaytimeTime(daytimeEnd) : getDefaultEndMinutes(7);
-        if (parsedEnd == null) {
-          return { errors: ["Please select a valid daytime end time."] };
-        }
-
-        if (parsedEnd <= parsedStart) {
-          return { errors: ["Daytime end time must be after the start time."] };
-        }
-
-        endMinutes = parsedEnd;
+    if (endSlot === 7) {
+      const parsedEnd = daytimeEnd
+        ? parseDaytimeTime(daytimeEnd)
+        : Math.min(startMinutes + 90, getDefaultEndMinutes(7));
+      if (parsedEnd == null) {
+        return { errors: ["Please select a valid daytime end time."] };
       }
+
+      if (parsedEnd <= startMinutes) {
+        return { errors: ["Daytime end time must be after the start time."] };
+      }
+
+      endMinutes = parsedEnd;
     }
 
     let submitBookerName = bookerName;
@@ -423,6 +448,23 @@ export function BookingModal({
   }
 
   const slotLabel = TIME_SLOTS.find((ts) => ts.slot === target.slot)?.label ?? "";
+  const showDaytimeStartSelector = target.slot === 7;
+  const showDaytimeEndSelector = endSlot === 7;
+  const daytimeStartOptions = DAYTIME_TIMES.filter((timeLabel) => {
+    const optionMinutes = parseDaytimeTime(timeLabel);
+    if (optionMinutes == null) {
+      return false;
+    }
+
+    return endSlot === 7 ? optionMinutes < getDefaultEndMinutes(7) : true;
+  });
+  const minimumDaytimeEndMinutes = showDaytimeStartSelector
+    ? parseDaytimeTime(daytimeStart) ?? defaultRange.startMinutes
+    : defaultRange.startMinutes;
+  const daytimeEndOptions = DAYTIME_TIMES.filter((timeLabel) => {
+    const optionMinutes = parseDaytimeTime(timeLabel);
+    return optionMinutes != null && optionMinutes > minimumDaytimeEndMinutes;
+  });
 
   return (
     <Dialog open onOpenChange={() => onClose()}>
@@ -576,25 +618,29 @@ export function BookingModal({
             </div>
           )}
 
-          {target.slot === 7 && (
+          {(showDaytimeStartSelector || showDaytimeEndSelector) && (
             <div className="space-y-2">
-              <Label>Specific time (8am–4:30pm slot)</Label>
-              <div className={endSlot === 7 ? "grid grid-cols-2 gap-2" : "grid grid-cols-1 gap-2"}>
-                <div>
-                  <Label htmlFor="startTime" className="text-xs text-muted-foreground">Start</Label>
-                  <select
-                    id="startTime"
-                    className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-base"
-                    value={daytimeStart}
-                    onChange={(e) => handleDaytimeStartChange(e.target.value)}
-                  >
-                    <option value="">8:00am</option>
-                    {DAYTIME_TIMES.map((t) => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
-                </div>
-                {endSlot === 7 && (
+              <Label>
+                Specific time{showDaytimeStartSelector ? "s" : ""} (8am–4:30pm slot)
+              </Label>
+              <div className={showDaytimeStartSelector && showDaytimeEndSelector ? "grid grid-cols-2 gap-2" : "grid grid-cols-1 gap-2"}>
+                {showDaytimeStartSelector && (
+                  <div>
+                    <Label htmlFor="startTime" className="text-xs text-muted-foreground">Start</Label>
+                    <select
+                      id="startTime"
+                      className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-base"
+                      value={daytimeStart}
+                      onChange={(e) => handleDaytimeStartChange(e.target.value)}
+                    >
+                      <option value="">{getDaytimeOptionForMinutes(defaultRange.startMinutes) || "8:00am"}</option>
+                      {daytimeStartOptions.map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {showDaytimeEndSelector && (
                   <div>
                     <Label htmlFor="endTime" className="text-xs text-muted-foreground">End</Label>
                     <select
@@ -603,15 +649,20 @@ export function BookingModal({
                       value={daytimeEnd}
                       onChange={(e) => setDaytimeEnd(e.target.value)}
                     >
-                      <option value="">4:30pm</option>
-                      {DAYTIME_TIMES.map((t) => (
+                      <option value="">{getDaytimeOptionForMinutes(defaultRange.endMinutes) || "4:30pm"}</option>
+                      {daytimeEndOptions.map((t) => (
                         <option key={t} value={t}>{t}</option>
                       ))}
                     </select>
                   </div>
                 )}
               </div>
-              {endSlot > 7 && (
+              {showDaytimeEndSelector && !showDaytimeStartSelector && (
+                <p className="text-xs text-muted-foreground">
+                  Morning bookings that run into the daytime slot can end at a precise time instead of blocking the whole 8am–4:30pm window.
+                </p>
+              )}
+              {endSlot > 7 && showDaytimeStartSelector && (
                 <p className="text-xs text-muted-foreground">
                   Start time is exact within the daytime slot. The booking then continues through the later slot you selected.
                 </p>

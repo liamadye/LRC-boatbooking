@@ -288,9 +288,10 @@ export function MobileBookingView({
                 <Fragment key={row.id}>
                   {showSectionHeader && (
                     <tr key={`${row.sectionLabel}-header`} className="border-t bg-gray-50">
-                      <td colSpan={1 + TIME_SLOTS.length} className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      <td className="sticky left-0 z-20 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                         {row.sectionLabel}
                       </td>
+                      <td colSpan={TIME_SLOTS.length} className="bg-gray-50" aria-hidden="true" />
                     </tr>
                   )}
                   <tr key={row.id} className={cn("border-t", isNotInUse && "opacity-50")}>

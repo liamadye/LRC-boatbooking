@@ -10,6 +10,7 @@ import {
   invitationInclude,
   serializeInvitation,
 } from "@/lib/admin-invitations";
+import { deleteSupabaseAuthUserByEmail } from "@/lib/supabase/admin-users";
 
 export async function POST(
   request: NextRequest,
@@ -139,6 +140,19 @@ export async function DELETE(
     );
   }
 
+  let authDeletion;
+  try {
+    authDeletion = await deleteSupabaseAuthUserByEmail(invitation.email);
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: error instanceof Error
+          ? error.message
+          : "Failed to delete the matching Supabase Auth user.",
+      },
+      { status: 500 }
+    );
+  }
   await prisma.invitation.delete({ where: { id } });
 
   await logAudit({
@@ -152,8 +166,13 @@ export async function DELETE(
       memberType: invitation.memberType,
       squadIds: invitation.invitationSquads.map((entry) => entry.squad.id),
       expiresAt: invitation.expiresAt.toISOString(),
+      authUserDeleted: authDeletion.deleted,
+      authUserId: authDeletion.authUserId,
     },
   });
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({
+    success: true,
+    authUserDeleted: authDeletion.deleted,
+  });
 }

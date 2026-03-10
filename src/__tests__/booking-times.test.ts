@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   bookingsOverlap,
   formatBookingWindow,
+  getDefaultBookingRange,
   getDaytimeOptionForMinutes,
   parseDaytimeTime,
 } from "@/lib/booking-times";
@@ -35,9 +36,34 @@ describe("booking-times", () => {
     ).toBe(false);
   });
 
+  it("allows an early-slot booking to end at the point a daytime booking begins", () => {
+    expect(
+      bookingsOverlap(
+        { startSlot: 5, endSlot: 7, startMinutes: 420, endMinutes: 510 },
+        { startSlot: 7, endSlot: 7, startMinutes: 510, endMinutes: 600 }
+      )
+    ).toBe(false);
+  });
+
   it("formats the precise booking window", () => {
     expect(
       formatBookingWindow({ startSlot: 7, endSlot: 7, startMinutes: 510, endMinutes: 600 })
     ).toBe("8:30am – 10am");
+  });
+
+  it("defaults slot 7 bookings to 90 minutes", () => {
+    expect(getDefaultBookingRange(7)).toEqual({
+      endSlot: 7,
+      startMinutes: 480,
+      endMinutes: 570,
+    });
+  });
+
+  it("defaults early morning bookings to 90 minutes even when they run into slot 7", () => {
+    expect(getDefaultBookingRange(5)).toEqual({
+      endSlot: 7,
+      startMinutes: 420,
+      endMinutes: 510,
+    });
   });
 });

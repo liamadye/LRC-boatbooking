@@ -40,7 +40,7 @@ const TARGET_TYPE_OPTIONS = [
 
 export function AuditLogViewer() {
   const [logs, setLogs] = useState<AuditEntry[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [action, setAction] = useState("");
   const [targetType, setTargetType] = useState("");
   const [page, setPage] = useState(1);
@@ -54,14 +54,21 @@ export function AuditLogViewer() {
     if (targetType) params.set("targetType", targetType);
     params.set("page", String(p));
 
-    const res = await fetch(`/api/admin/audit-log?${params}`);
-    if (res.ok) {
+    try {
+      const res = await fetch(`/api/admin/audit-log?${params}`);
+      if (!res.ok) {
+        throw new Error("Failed to load audit log.");
+      }
       const data = await res.json();
       setLogs(data.logs);
       setTotal(data.total);
       setPage(data.page);
+    } catch {
+      setLogs([]);
+      setTotal(0);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   useEffect(() => {
@@ -127,7 +134,9 @@ export function AuditLogViewer() {
       </div>
 
       <div className="text-sm text-muted-foreground">
-        {total} entr{total !== 1 ? "ies" : "y"} found
+        {loading && logs.length === 0
+          ? "Loading audit log..."
+          : `${total} entr${total !== 1 ? "ies" : "y"} found`}
       </div>
 
       <div className="rounded-lg border bg-white overflow-hidden">

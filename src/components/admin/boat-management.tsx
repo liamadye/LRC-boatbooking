@@ -1,16 +1,46 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Circle, Lock, Users, ChevronDown, ChevronRight, X } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Circle, Lock, Users, ChevronDown, ChevronRight, Loader2, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { BoatWithRelations } from "@/lib/types";
 
 type Squad = { id: string; name: string };
 type AdminUser = { id: string; fullName: string; email: string };
+const EMPTY_USER_IDS: string[] = [];
+
+type BoatApiResponse = {
+  id: string;
+  ownerUserId: string | null;
+  avgWeightKg: string | number | null;
+  status: BoatWithRelations["status"];
+  classification: BoatWithRelations["classification"];
+  responsibleSquadId: string | null;
+  privateBoatAccess?: { userId: string }[];
+};
+
+function normalizeBoat(boat: BoatApiResponse, previous: BoatWithRelations): BoatWithRelations {
+  return {
+    ...previous,
+    ...boat,
+    avgWeightKg:
+      boat.avgWeightKg === null || boat.avgWeightKg === undefined
+        ? null
+        : Number(boat.avgWeightKg),
+    privateBoatAccessUserIds:
+      boat.privateBoatAccess?.map((entry) => entry.userId) ?? previous.privateBoatAccessUserIds ?? [],
+  };
+}
+
+function buildWeightDrafts(boats: BoatWithRelations[]) {
+  return Object.fromEntries(
+    boats.map((boat) => [boat.id, boat.avgWeightKg == null ? "" : String(boat.avgWeightKg)])
+  );
+}
 
 export function BoatManagement({
   boats,
@@ -21,89 +51,201 @@ export function BoatManagement({
   squads: Squad[];
   users?: AdminUser[];
 }) {
-  const router = useRouter();
   const { toast } = useToast();
+  const [managedBoats, setManagedBoats] = useState(boats);
+  const [weightDrafts, setWeightDrafts] = useState<Record<string, string>>(buildWeightDrafts(boats));
   const [expandedBoatId, setExpandedBoatId] = useState<string | null>(null);
-  const [savingAccess, setSavingAccess] = useState(false);
+  const [pendingActions, setPendingActions] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setManagedBoats(boats);
+    setWeightDrafts(buildWeightDrafts(boats));
+  }, [boats]);
+
+  function setPending(boatId: string, action: string, pending: boolean) {
+    const key = `${boatId}:${action}`;
+    setPendingActions((current) => {
+      if (!pending) {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      }
+
+      return {
+        ...current,
+        [key]: true,
+      };
+    });
+  }
+
+  function isPending(boatId: string, action: string) {
+    return !!pendingActions[`${boatId}:${action}`];
+  }
+
+  async function mutateBoat(args: {
+    boatId: string;
+    action: "status" | "classification" | "owner" | "access" | "weight" | "responsibleSquad";
+    payload: Record<string, unknown>;
+    optimistic: (boat: BoatWithRelations) => BoatWithRelations;
+    successTitle: string;
+    errorTitle: string;
+    rollbackWeightDraft?: string;
+  }) {
+    const previousBoat = managedBoats.find((boat) => boat.id === args.boatId);
+    if (!previousBoat) {
+      return;
+    }
+
+    setManagedBoats((current) =>
+      current.map((boat) => (boat.id === args.boatId ? args.optimistic(boat) : boat))
+    );
+    setPending(args.boatId, args.action, true);
+
+    try {
+      const res = await fetch(`/api/admin/boats/${args.boatId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(args.payload),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(
+          typeof data === "object" && data !== null && "error" in data && typeof data.error === "string"
+            ? data.error
+            : "Request failed."
+        );
+      }
+
+      setManagedBoats((current) =>
+        current.map((boat) =>
+          boat.id === args.boatId ? normalizeBoat(data as BoatApiResponse, boat) : boat
+        )
+      );
+      setWeightDrafts((current) => ({
+        ...current,
+        [args.boatId]:
+          data.avgWeightKg === null || data.avgWeightKg === undefined ? "" : String(Number(data.avgWeightKg)),
+      }));
+      toast({ title: args.successTitle });
+    } catch (error) {
+      setManagedBoats((current) =>
+        current.map((boat) => (boat.id === args.boatId ? previousBoat : boat))
+      );
+      setWeightDrafts((current) => ({
+        ...current,
+        [args.boatId]:
+          args.rollbackWeightDraft ??
+          (previousBoat.avgWeightKg == null ? "" : String(previousBoat.avgWeightKg)),
+      }));
+      toast({
+        title: args.errorTitle,
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setPending(args.boatId, args.action, false);
+    }
+  }
 
   async function updateResponsibleSquad(boatId: string, squadId: string | null) {
-    const res = await fetch(`/api/admin/boats/${boatId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ responsibleSquadId: squadId || null }),
+    const selectedSquad = squads.find((squad) => squad.id === squadId) ?? null;
+    await mutateBoat({
+      boatId,
+      action: "responsibleSquad",
+      payload: { responsibleSquadId: squadId || null },
+      optimistic: (boat) => ({
+        ...boat,
+        responsibleSquadId: squadId,
+        responsibleSquad: selectedSquad,
+      }),
+      successTitle: "Responsible squad updated",
+      errorTitle: "Failed to update responsible squad",
     });
-
-    if (res.ok) {
-      toast({ title: "Responsible squad updated" });
-      router.refresh();
-    } else {
-      toast({ title: "Failed to update squad", variant: "destructive" });
-    }
   }
 
-  async function toggleStatus(boatId: string, currentStatus: string) {
+  async function toggleStatus(boatId: string, currentStatus: BoatWithRelations["status"]) {
     const newStatus = currentStatus === "available" ? "not_in_use" : "available";
-    const res = await fetch(`/api/admin/boats/${boatId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: newStatus }),
+    await mutateBoat({
+      boatId,
+      action: "status",
+      payload: { status: newStatus },
+      optimistic: (boat) => ({ ...boat, status: newStatus }),
+      successTitle: `Boat ${newStatus === "not_in_use" ? "disabled" : "enabled"}`,
+      errorTitle: "Failed to update boat status",
     });
-
-    if (res.ok) {
-      toast({ title: `Boat ${newStatus === "not_in_use" ? "disabled" : "enabled"}` });
-      router.refresh();
-    }
   }
 
-  async function toggleClassification(boatId: string, current: string) {
-    const newClass = current === "black" ? "green" : "black";
-    const res = await fetch(`/api/admin/boats/${boatId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ classification: newClass }),
+  async function toggleClassification(
+    boatId: string,
+    currentClassification: BoatWithRelations["classification"]
+  ) {
+    const newClassification = currentClassification === "black" ? "green" : "black";
+    await mutateBoat({
+      boatId,
+      action: "classification",
+      payload: { classification: newClassification },
+      optimistic: (boat) => ({ ...boat, classification: newClassification }),
+      successTitle: `Boat set to ${newClassification}`,
+      errorTitle: "Failed to update boat classification",
     });
-
-    if (res.ok) {
-      toast({ title: `Boat set to ${newClass}` });
-      router.refresh();
-    }
   }
 
   async function updateOwner(boatId: string, ownerUserId: string | null) {
-    const res = await fetch(`/api/admin/boats/${boatId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ownerUserId: ownerUserId || null }),
+    await mutateBoat({
+      boatId,
+      action: "owner",
+      payload: { ownerUserId: ownerUserId || null },
+      optimistic: (boat) => ({ ...boat, ownerUserId }),
+      successTitle: "Owner updated",
+      errorTitle: "Failed to update owner",
     });
-
-    if (res.ok) {
-      toast({ title: "Owner updated" });
-      router.refresh();
-    }
   }
 
   async function updateAccessList(boatId: string, userIds: string[]) {
-    setSavingAccess(true);
-    const res = await fetch(`/api/admin/boats/${boatId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ privateBoatAccessUserIds: userIds }),
+    await mutateBoat({
+      boatId,
+      action: "access",
+      payload: { privateBoatAccessUserIds: userIds },
+      optimistic: (boat) => ({ ...boat, privateBoatAccessUserIds: userIds }),
+      successTitle: "Access list updated",
+      errorTitle: "Failed to update access list",
     });
+  }
 
-    if (res.ok) {
-      toast({ title: "Access list updated" });
-      router.refresh();
-    } else {
-      toast({ title: "Failed to update access", variant: "destructive" });
+  async function saveWeight(boatId: string) {
+    const draft = weightDrafts[boatId]?.trim() ?? "";
+    if (draft !== "" && Number.isNaN(Number(draft))) {
+      toast({
+        title: "Invalid weight",
+        description: "Weight must be a number in kilograms.",
+        variant: "destructive",
+      });
+      return;
     }
-    setSavingAccess(false);
+
+    const nextWeight = draft === "" ? null : Number(draft);
+    await mutateBoat({
+      boatId,
+      action: "weight",
+      payload: { avgWeightKg: nextWeight },
+      optimistic: (boat) => ({ ...boat, avgWeightKg: nextWeight }),
+      successTitle: "Boat weight updated",
+      errorTitle: "Failed to update boat weight",
+      rollbackWeightDraft: draft,
+    });
   }
 
   return (
     <div className="space-y-2 mt-4">
-      {boats.map((boat) => {
+      {managedBoats.map((boat) => {
         const isExpanded = expandedBoatId === boat.id;
         const isPrivate = boat.category === "private" || boat.category === "syndicate";
+        const ownerSaving = isPending(boat.id, "owner");
+        const accessSaving = isPending(boat.id, "access");
+        const weightSaving = isPending(boat.id, "weight");
+        const statusSaving = isPending(boat.id, "status");
+        const classificationSaving = isPending(boat.id, "classification");
 
         return (
           <Card key={boat.id} className={boat.status === "not_in_use" ? "opacity-60" : ""}>
@@ -136,7 +278,7 @@ export function BoatManagement({
                           <option key={s.id} value={s.id}>{s.name}</option>
                         ))}
                       </select>
-                      {boat.avgWeightKg && <span>— {boat.avgWeightKg}kg</span>}
+                      {boat.avgWeightKg != null && <span>— {boat.avgWeightKg}kg</span>}
                     </div>
                   </div>
                 </div>
@@ -163,7 +305,9 @@ export function BoatManagement({
                     size="sm"
                     className="h-8 text-xs px-2"
                     onClick={() => toggleClassification(boat.id, boat.classification)}
+                    disabled={classificationSaving}
                   >
+                    {classificationSaving && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
                     {boat.classification === "black" ? "Set Green" : "Set Black"}
                   </Button>
                   <Button
@@ -171,19 +315,51 @@ export function BoatManagement({
                     size="sm"
                     className="h-8 text-xs px-2"
                     onClick={() => toggleStatus(boat.id, boat.status)}
+                    disabled={statusSaving}
                   >
+                    {statusSaving && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
                     {boat.status === "not_in_use" ? "Enable" : "Disable"}
                   </Button>
                 </div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-end gap-2">
+                <div className="w-full max-w-[180px]">
+                  <label className="text-xs font-medium text-muted-foreground">Boat weight (kg)</label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    inputMode="decimal"
+                    value={weightDrafts[boat.id] ?? ""}
+                    onChange={(event) =>
+                      setWeightDrafts((current) => ({
+                        ...current,
+                        [boat.id]: event.target.value,
+                      }))
+                    }
+                    disabled={weightSaving}
+                    className="mt-1"
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => saveWeight(boat.id)}
+                  disabled={weightSaving}
+                >
+                  {weightSaving && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+                  Save Weight
+                </Button>
               </div>
 
               {isExpanded && isPrivate && users && (
                 <PrivateBoatAccessPanel
                   boat={boat}
                   users={users}
+                  ownerSaving={ownerSaving}
+                  accessSaving={accessSaving}
                   onUpdateOwner={(userId) => updateOwner(boat.id, userId)}
                   onUpdateAccess={(userIds) => updateAccessList(boat.id, userIds)}
-                  saving={savingAccess}
                 />
               )}
             </CardContent>
@@ -197,26 +373,35 @@ export function BoatManagement({
 function PrivateBoatAccessPanel({
   boat,
   users,
+  ownerSaving,
+  accessSaving,
   onUpdateOwner,
   onUpdateAccess,
-  saving,
 }: {
   boat: BoatWithRelations;
   users: AdminUser[];
+  ownerSaving: boolean;
+  accessSaving: boolean;
   onUpdateOwner: (userId: string | null) => void;
   onUpdateAccess: (userIds: string[]) => void;
-  saving: boolean;
 }) {
-  const accessUserIds = boat.privateBoatAccessUserIds ?? [];
+  const accessUserIds = boat.privateBoatAccessUserIds ?? EMPTY_USER_IDS;
   const [selectedUserId, setSelectedUserId] = useState("");
 
-  const accessUsers = users.filter((u) => accessUserIds.includes(u.id));
-  const availableUsers = users.filter(
-    (u) => !accessUserIds.includes(u.id) && u.id !== boat.ownerUserId
+  const accessUsers = useMemo(
+    () => users.filter((user) => accessUserIds.includes(user.id)),
+    [accessUserIds, users]
+  );
+  const availableUsers = useMemo(
+    () => users.filter((user) => !accessUserIds.includes(user.id) && user.id !== boat.ownerUserId),
+    [accessUserIds, boat.ownerUserId, users]
   );
 
   function handleAddUser() {
-    if (!selectedUserId) return;
+    if (!selectedUserId) {
+      return;
+    }
+
     onUpdateAccess([...accessUserIds, selectedUserId]);
     setSelectedUserId("");
   }
@@ -229,18 +414,24 @@ function PrivateBoatAccessPanel({
     <div className="mt-3 pt-3 border-t space-y-3">
       <div>
         <label className="text-xs font-medium text-muted-foreground">Owner</label>
-        <select
-          className="mt-1 block w-full text-sm border rounded-md px-2 py-1.5"
-          value={boat.ownerUserId ?? ""}
-          onChange={(e) => onUpdateOwner(e.target.value || null)}
-        >
-          <option value="">No owner</option>
-          {users.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.fullName} ({u.email})
-            </option>
-          ))}
-        </select>
+        <div className="mt-1 relative">
+          <select
+            className="block w-full text-sm border rounded-md px-2 py-1.5"
+            value={boat.ownerUserId ?? ""}
+            onChange={(event) => onUpdateOwner(event.target.value || null)}
+            disabled={ownerSaving}
+          >
+            <option value="">No owner</option>
+            {users.map((user) => (
+              <option key={user.id} value={user.id}>
+                {user.fullName} ({user.email})
+              </option>
+            ))}
+          </select>
+          {ownerSaving && (
+            <Loader2 className="absolute right-2 top-2 h-4 w-4 animate-spin text-muted-foreground" />
+          )}
+        </div>
       </div>
 
       <div>
@@ -249,13 +440,13 @@ function PrivateBoatAccessPanel({
         </label>
         {accessUsers.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1">
-            {accessUsers.map((u) => (
-              <Badge key={u.id} variant="secondary" className="gap-1">
-                {u.fullName}
+            {accessUsers.map((user) => (
+              <Badge key={user.id} variant="secondary" className="gap-1">
+                {user.fullName}
                 <button
-                  onClick={() => handleRemoveUser(u.id)}
-                  disabled={saving}
-                  className="hover:text-red-600"
+                  onClick={() => handleRemoveUser(user.id)}
+                  disabled={accessSaving}
+                  className="hover:text-red-600 disabled:opacity-50"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -268,20 +459,22 @@ function PrivateBoatAccessPanel({
           <select
             className="flex-1 text-sm border rounded-md px-2 py-1.5"
             value={selectedUserId}
-            onChange={(e) => setSelectedUserId(e.target.value)}
+            onChange={(event) => setSelectedUserId(event.target.value)}
+            disabled={accessSaving}
           >
             <option value="">Select a member to add...</option>
-            {availableUsers.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.fullName} ({u.email})
+            {availableUsers.map((user) => (
+              <option key={user.id} value={user.id}>
+                {user.fullName} ({user.email})
               </option>
             ))}
           </select>
           <Button
             size="sm"
             onClick={handleAddUser}
-            disabled={!selectedUserId || saving}
+            disabled={!selectedUserId || accessSaving}
           >
+            {accessSaving && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
             Add
           </Button>
         </div>

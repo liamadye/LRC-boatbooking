@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
@@ -27,6 +28,10 @@ export async function PATCH(
     updateData.responsibleSquadId = body.responsibleSquadId;
   if (body.ownerUserId !== undefined)
     updateData.ownerUserId = body.ownerUserId || null;
+  if (body.avgWeightKg !== undefined)
+    updateData.avgWeightKg = body.avgWeightKg === null || body.avgWeightKg === ""
+      ? null
+      : body.avgWeightKg;
 
   // Handle private boat access list
   if (Array.isArray(body.privateBoatAccessUserIds)) {
@@ -53,9 +58,23 @@ export async function PATCH(
     action: "boat.update",
     targetType: "boat",
     targetId: id,
-    before: { status: before.status, classification: before.classification, responsibleSquadId: before.responsibleSquadId },
-    after: { status: boat.status, classification: boat.classification, responsibleSquadId: boat.responsibleSquadId },
+    before: {
+      status: before.status,
+      classification: before.classification,
+      responsibleSquadId: before.responsibleSquadId,
+      ownerUserId: before.ownerUserId,
+      avgWeightKg: before.avgWeightKg ? Number(before.avgWeightKg) : null,
+    },
+    after: {
+      status: boat.status,
+      classification: boat.classification,
+      responsibleSquadId: boat.responsibleSquadId,
+      ownerUserId: boat.ownerUserId,
+      avgWeightKg: boat.avgWeightKg ? Number(boat.avgWeightKg) : null,
+    },
   });
+
+  revalidateTag("boats");
 
   return NextResponse.json(boat);
 }

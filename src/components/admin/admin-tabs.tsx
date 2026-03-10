@@ -11,10 +11,20 @@ import type {
 } from "@/lib/types";
 
 const MemberManagement = dynamic(() => import("./member-management").then(m => ({ default: m.MemberManagement })));
-const BookingManagement = dynamic(() => import("./booking-management").then(m => ({ default: m.BookingManagement })));
+const BookingManagement = dynamic(
+  () => import("./booking-management").then(m => ({ default: m.BookingManagement })),
+  {
+    loading: () => <div className="mt-4 text-sm text-muted-foreground">Loading bookings...</div>,
+  }
+);
 const InviteManagement = dynamic(() => import("./invite-management").then(m => ({ default: m.InviteManagement })));
 const ApplicationReview = dynamic(() => import("./application-review").then(m => ({ default: m.ApplicationReview })));
-const AuditLogViewer = dynamic(() => import("./audit-log-viewer").then(m => ({ default: m.AuditLogViewer })));
+const AuditLogViewer = dynamic(
+  () => import("./audit-log-viewer").then(m => ({ default: m.AuditLogViewer })),
+  {
+    loading: () => <div className="mt-4 text-sm text-muted-foreground">Loading audit log...</div>,
+  }
+);
 const SquadManagement = dynamic(() => import("./squad-management").then(m => ({ default: m.SquadManagement })));
 
 type AdminUser = {

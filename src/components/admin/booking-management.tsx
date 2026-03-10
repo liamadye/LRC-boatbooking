@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,10 +29,9 @@ type AdminBooking = {
 };
 
 export function BookingManagement() {
-  const router = useRouter();
   const { toast } = useToast();
   const [bookings, setBookings] = useState<AdminBooking[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [dateFrom, setDateFrom] = useState(format(new Date(), "yyyy-MM-dd"));
   const [dateTo, setDateTo] = useState(format(addDays(new Date(), 7), "yyyy-MM-dd"));
 
@@ -43,12 +41,18 @@ export function BookingManagement() {
     if (dateFrom) params.set("dateFrom", dateFrom);
     if (dateTo) params.set("dateTo", dateTo);
 
-    const res = await fetch(`/api/admin/bookings?${params}`);
-    if (res.ok) {
+    try {
+      const res = await fetch(`/api/admin/bookings?${params}`);
+      if (!res.ok) {
+        throw new Error("Failed to load bookings.");
+      }
       const data = await res.json();
       setBookings(data);
+    } catch {
+      toast({ title: "Failed to load bookings", variant: "destructive" });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   useEffect(() => {
@@ -64,7 +68,6 @@ export function BookingManagement() {
     if (res.ok) {
       toast({ title: "Booking cancelled" });
       setBookings((prev) => prev.filter((b) => b.id !== bookingId));
-      router.refresh();
     } else {
       toast({ title: "Failed to cancel booking", variant: "destructive" });
     }
@@ -106,7 +109,9 @@ export function BookingManagement() {
       </div>
 
       <div className="text-sm text-muted-foreground">
-        {bookings.length} booking{bookings.length !== 1 ? "s" : ""} found
+        {loading && bookings.length === 0
+          ? "Loading bookings..."
+          : `${bookings.length} booking${bookings.length !== 1 ? "s" : ""} found`}
       </div>
 
       <div className="rounded-lg border bg-white overflow-x-auto">
@@ -162,7 +167,7 @@ export function BookingManagement() {
             {bookings.length === 0 && (
               <tr>
                 <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">
-                  No bookings found for the selected date range.
+                  {loading ? "Loading bookings..." : "No bookings found for the selected date range."}
                 </td>
               </tr>
             )}

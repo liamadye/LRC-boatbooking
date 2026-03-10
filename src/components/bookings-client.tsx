@@ -5,7 +5,6 @@ import { addDays, format, parseISO } from "date-fns";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WeekNav } from "@/components/week-nav";
 import { BookingGrid } from "@/components/booking-grid";
-import { TotalsBar } from "@/components/totals-bar";
 import { useToast } from "@/hooks/use-toast";
 import { getWeekStartKey } from "@/lib/booking-utils";
 import type {
@@ -30,6 +29,8 @@ function sortBookings(bookings: SerializedBooking[]) {
   return [...bookings].sort((a, b) => {
     if (a.date !== b.date) return a.date.localeCompare(b.date);
     if (a.startSlot !== b.startSlot) return a.startSlot - b.startSlot;
+    if (a.startMinutes !== b.startMinutes) return a.startMinutes - b.startMinutes;
+    if (a.endMinutes !== b.endMinutes) return a.endMinutes - b.endMinutes;
     return a.id.localeCompare(b.id);
   });
 }
@@ -271,46 +272,6 @@ export function BookingsClient({
     [applyBookingChange]
   );
 
-  // Build boat lookup from all boats for totals calculation
-  const boatMap = useMemo(() => {
-    const m = new Map<string, BoatWithRelations>();
-    boats.forEach((b) => m.set(b.id, b));
-    return m;
-  }, [boats]);
-
-  // Calculate totals across ALL resources (not per-tab)
-  const dayBookings = useMemo(
-    () => visibleBookings.filter((b) => b.date === selectedDate),
-    [visibleBookings, selectedDate]
-  );
-
-  const totals = useMemo(() => {
-    const inShed: Record<number, number> = {};
-    const rowing: Record<number, number> = {};
-    for (let s = 1; s <= 9; s++) {
-      inShed[s] = 0;
-      rowing[s] = 0;
-    }
-    for (const b of dayBookings) {
-      for (let s = b.startSlot; s <= b.endSlot; s++) {
-        if (b.resourceType === "boat") {
-          const boat = boatMap.get(b.boatId ?? "");
-          if (boat?.category === "tinny") {
-            inShed[s] += b.crewCount;
-          } else {
-            rowing[s] += b.crewCount;
-            if (!boat?.isOutside) {
-              inShed[s] += b.crewCount;
-            }
-          }
-        } else {
-          inShed[s] += b.crewCount;
-        }
-      }
-    }
-    return { inShed, rowing };
-  }, [dayBookings, boatMap]);
-
   return (
     <div className="space-y-4">
       <div className="sticky top-0 z-40 bg-background pb-3 space-y-3">
@@ -331,10 +292,7 @@ export function BookingsClient({
           onSelectDate={handleSelectDate}
           loading={loadingWeek}
         />
-
-        <TotalsBar inShed={totals.inShed} rowing={totals.rowing} />
       </div>
-
       <Tabs defaultValue="shells">
         <TabsList>
           <TabsTrigger value="shells">Shells</TabsTrigger>

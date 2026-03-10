@@ -453,7 +453,7 @@ const SectionHeader = memo(function SectionHeader({
       aria-expanded={!isCollapsed}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } }}
     >
-      <td colSpan={1 + extraColumns + TIME_SLOTS.length} className="px-3 py-2 font-semibold">
+      <td className={cn("sticky left-0 z-20 px-3 py-2 font-semibold", colorClass)}>
         <div className="flex items-center gap-2">
           {isCollapsed ? (
             <ChevronRight className="h-4 w-4" aria-hidden="true" />
@@ -466,6 +466,11 @@ const SectionHeader = memo(function SectionHeader({
           </span>
         </div>
       </td>
+      <td
+        colSpan={extraColumns + TIME_SLOTS.length}
+        className={colorClass}
+        aria-hidden="true"
+      />
     </tr>
   );
 });

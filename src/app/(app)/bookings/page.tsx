@@ -4,6 +4,7 @@ import { getAuthenticatedUser } from "@/lib/auth";
 import { startOfWeek, addDays, format, parseISO } from "date-fns";
 import { BookingsClient } from "@/components/bookings-client";
 import { buildBookingWeekPayload } from "@/lib/booking-utils";
+import { getCachedBoats, getCachedEquipment, getCachedOarSets } from "@/lib/reference-data";
 import { getSydneyDateString } from "@/lib/sydney-time";
 
 export default async function BookingsPage({
@@ -23,14 +24,9 @@ export default async function BookingsPage({
   // Fetch everything in parallel — static data once, week data once.
   const [boats, equipment, oarSets, userProfile, bookings, bookingWeek] =
     await Promise.all([
-      prisma.boat.findMany({
-        include: { responsibleSquad: true, privateBoatAccess: { select: { userId: true } } },
-        orderBy: { displayOrder: "asc" },
-      }),
-      prisma.equipment.findMany({
-        orderBy: [{ type: "asc" }, { number: "asc" }],
-      }),
-      prisma.oarSet.findMany({ orderBy: { name: "asc" } }),
+      getCachedBoats(),
+      getCachedEquipment(),
+      getCachedOarSets(),
       getAuthenticatedUser().then(async (user) => {
         if (!user) return null;
         return prisma.user.findUnique({

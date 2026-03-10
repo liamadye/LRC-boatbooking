@@ -4,6 +4,7 @@ import { AdminTabs } from "@/components/admin/admin-tabs";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { invitationInclude, serializeInvitation } from "@/lib/admin-invitations";
+import { getCachedBoats } from "@/lib/reference-data";
 import { serializeSignupRequest, signupRequestInclude } from "@/lib/signup-requests";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -15,10 +16,7 @@ export default async function AdminPage() {
   }
 
   const [boats, squads, users, applications, invitations, signupRequests] = await Promise.all([
-    prisma.boat.findMany({
-      include: { responsibleSquad: true, privateBoatAccess: { select: { userId: true } } },
-      orderBy: { displayOrder: "asc" },
-    }),
+    getCachedBoats(),
     prisma.squad.findMany({ orderBy: { name: "asc" } }),
     prisma.user.findMany({
       include: { squads: { include: { squad: true } } },

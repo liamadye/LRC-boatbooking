@@ -109,20 +109,24 @@ export function BookingDetailPopover({
               <span>{boat.boatType}</span>
             </div>
           )}
-          {booking.isRaceSpecific && (
-            <Badge variant="secondary">Race-specific</Badge>
-          )}
-          {booking.squad && (
-            <Badge variant="outline">Squad booking</Badge>
+          {(booking.isRaceSpecific || booking.squad || isOwner) && (
+            <div className="flex flex-wrap gap-2">
+              {booking.isRaceSpecific && (
+                <Badge variant="secondary">Race-specific</Badge>
+              )}
+              {booking.squad && (
+                <Badge variant="outline">Squad booking</Badge>
+              )}
+              {isOwner && (
+                <Badge variant="default" className="bg-blue-600">Your booking</Badge>
+              )}
+            </div>
           )}
           {booking.notes && (
             <div>
               <span className="text-muted-foreground">Notes: </span>
               <span>{booking.notes}</span>
             </div>
-          )}
-          {isOwner && (
-            <Badge variant="default" className="bg-blue-600">Your booking</Badge>
           )}
         </div>
 
