@@ -304,7 +304,12 @@ export function BookingsClient({
         <TabsContent value="shells">
           <BookingGrid
             tab="shells"
-            boats={boats.filter((b) => b.category === "club" || b.category === "private")}
+            boats={boats.filter(
+              (b) =>
+                b.category === "club" ||
+                b.category === "private" ||
+                b.category === "syndicate"
+            )}
             equipment={[]}
             oarSets={[]}
             bookings={visibleBookings}

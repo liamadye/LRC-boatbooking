@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { validateBooking, isWeekend } from "@/lib/validation";
@@ -233,21 +234,41 @@ export async function PATCH(
     nextBookerName = user.fullName;
   }
 
-  const updatedBooking = await prisma.booking.update({
-    where: { id },
-    data: {
-      squadId: nextSquadId,
-      bookerName: nextBookerName,
-      crewCount: newCrewCount,
-      endSlot: newEndSlot,
-      startMinutes: newStartMinutes,
-      endMinutes: newEndMinutes,
-      isRaceSpecific: newIsRaceSpecific,
-      raceDetails: body.raceDetails ?? booking.raceDetails,
-      notes: body.notes ?? booking.notes,
-    },
-    include: { squad: { select: { id: true, name: true } } },
-  });
+  let updatedBooking;
+  try {
+    updatedBooking = await prisma.booking.update({
+      where: { id },
+      data: {
+        squadId: nextSquadId,
+        bookerName: nextBookerName,
+        crewCount: newCrewCount,
+        endSlot: newEndSlot,
+        startMinutes: newStartMinutes,
+        endMinutes: newEndMinutes,
+        isRaceSpecific: newIsRaceSpecific,
+        raceDetails: body.raceDetails ?? booking.raceDetails,
+        notes: body.notes ?? booking.notes,
+      },
+      include: { squad: { select: { id: true, name: true } } },
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return NextResponse.json(
+        {
+          errors: [
+            {
+              field: "slot",
+              message:
+                "This environment is still enforcing an old single-booking rule for this slot. Apply the precise booking-time migration before allowing multiple daytime bookings.",
+            },
+          ],
+        },
+        { status: 409 }
+      );
+    }
+
+    throw error;
+  }
 
   return NextResponse.json(serializeBooking(updatedBooking));
 }

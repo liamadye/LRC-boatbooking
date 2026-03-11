@@ -4,7 +4,10 @@ import { useState, useEffect, useMemo, useCallback, memo } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { BoatInfoDialog } from "@/components/boat-info-dialog";
-import { formatBookingWindow } from "@/lib/booking-times";
+import {
+  formatBookingWindow,
+  getSuggestedDaytimeBookingRange,
+} from "@/lib/booking-times";
 import { getBookingDisplayName } from "@/lib/booking-utils";
 import { cn } from "@/lib/utils";
 import { TIME_SLOTS, BOAT_SECTIONS, SECTION_COLORS } from "@/lib/constants";
@@ -50,7 +53,12 @@ type BookingTarget = {
   resourceId: string;
   resourceName: string;
   slot: number;
+  initialEndSlot?: number;
+  initialStartMinutes?: number;
+  initialEndMinutes?: number;
 };
+
+const SECTION_HEADER_STICKY_TOP = 41;
 
 export function BookingGrid({
   tab,
@@ -105,7 +113,10 @@ export function BookingGrid({
 
   // Memoize resource groupings
   const clubBoats = useMemo(() => boats.filter((b) => b.category === "club"), [boats]);
-  const privateBoats = useMemo(() => boats.filter((b) => b.category === "private"), [boats]);
+  const privateBoats = useMemo(
+    () => boats.filter((b) => b.category === "private" || b.category === "syndicate"),
+    [boats]
+  );
   const tinnies = useMemo(() => boats.filter((b) => b.category === "tinny"), [boats]);
   const ergs = useMemo(() => equipment.filter((e) => e.type === "erg"), [equipment]);
   const bikes = useMemo(() => equipment.filter((e) => e.type === "bike"), [equipment]);
@@ -123,6 +134,9 @@ export function BookingGrid({
       resourceId,
       resourceName,
       slot: booking.startSlot,
+      initialEndSlot: booking.endSlot,
+      initialStartMinutes: booking.startMinutes,
+      initialEndMinutes: booking.endMinutes,
     });
     setEditingBooking(booking);
   }
@@ -176,7 +190,12 @@ export function BookingGrid({
     resourceType: "boat" | "equipment" | "oar_set",
     resourceId: string,
     resourceName: string,
-    slot: number
+    slot: number,
+    options?: {
+      initialEndSlot?: number;
+      initialStartMinutes?: number;
+      initialEndMinutes?: number;
+    }
   ) {
     const existing = getBookings(resourceId, slot)[0];
     if (slot !== 7 && existing) {
@@ -186,7 +205,15 @@ export function BookingGrid({
       setSelectedBooking(existing);
       return;
     }
-    setBookingTarget({ resourceType, resourceId, resourceName, slot });
+    setBookingTarget({
+      resourceType,
+      resourceId,
+      resourceName,
+      slot,
+      initialEndSlot: options?.initialEndSlot,
+      initialStartMinutes: options?.initialStartMinutes,
+      initialEndMinutes: options?.initialEndMinutes,
+    });
   }
 
   return (
@@ -208,8 +235,16 @@ export function BookingGrid({
         user={user}
         getBookings={getBookings}
         onBookingClick={(booking) => setSelectedBooking(booking)}
-        onSlotClick={(type, id, name, slot) =>
-          setBookingTarget({ resourceType: type, resourceId: id, resourceName: name, slot })
+        onSlotClick={(type, id, name, slot, options) =>
+          setBookingTarget({
+            resourceType: type,
+            resourceId: id,
+            resourceName: name,
+            slot,
+            initialEndSlot: options?.initialEndSlot,
+            initialStartMinutes: options?.initialStartMinutes,
+            initialEndMinutes: options?.initialEndMinutes,
+          })
         }
         onBoatInfoClick={(boat) => setSelectedBoat(boat)}
       />
@@ -280,14 +315,14 @@ export function BookingGrid({
             {/* Private Boats (shells tab) */}
             {tab === "shells" && privateBoats.length > 0 && <SectionGroup>
               <SectionHeader
-                label="Private Boats"
+                label="Private & Syndicate Boats"
                 count={privateBoats.length}
-                isCollapsed={collapsedSections.has("Private Boats")}
-                onToggle={() => toggleSection("Private Boats")}
+                isCollapsed={collapsedSections.has("Private & Syndicate Boats")}
+                onToggle={() => toggleSection("Private & Syndicate Boats")}
                 colorClass={SECTION_COLORS.private}
                 extraColumns={showBoatColumns ? 3 : 0}
               />
-              {!collapsedSections.has("Private Boats") &&
+              {!collapsedSections.has("Private & Syndicate Boats") &&
                 privateBoats.map((boat) => (
                     <BoatRow
                       key={boat.id}
@@ -453,7 +488,10 @@ const SectionHeader = memo(function SectionHeader({
       aria-expanded={!isCollapsed}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } }}
     >
-      <td className={cn("sticky left-0 z-20 px-3 py-2 font-semibold", colorClass)}>
+      <td
+        className={cn("sticky left-0 z-30 px-3 py-2 font-semibold", colorClass)}
+        style={{ top: SECTION_HEADER_STICKY_TOP }}
+      >
         <div className="flex items-center gap-2">
           {isCollapsed ? (
             <ChevronRight className="h-4 w-4" aria-hidden="true" />
@@ -468,7 +506,8 @@ const SectionHeader = memo(function SectionHeader({
       </td>
       <td
         colSpan={extraColumns + TIME_SLOTS.length}
-        className={colorClass}
+        className={cn("sticky z-20", colorClass)}
+        style={{ top: SECTION_HEADER_STICKY_TOP }}
         aria-hidden="true"
       />
     </tr>
@@ -488,7 +527,17 @@ const BoatRow = memo(function BoatRow({
   boat: BoatWithRelations;
   showBoatColumns?: boolean;
   getBookings: (id: string, slot: number) => SerializedBooking[];
-  onCellClick: (type: "boat", id: string, name: string, slot: number) => void;
+  onCellClick: (
+    type: "boat",
+    id: string,
+    name: string,
+    slot: number,
+    options?: {
+      initialEndSlot?: number;
+      initialStartMinutes?: number;
+      initialEndMinutes?: number;
+    }
+  ) => void;
   onBookingClick: (booking: SerializedBooking) => void;
   onBoatInfoClick: (boat: BoatWithRelations) => void;
   colorClass: string;
@@ -496,7 +545,7 @@ const BoatRow = memo(function BoatRow({
 }) {
   const isNotInUse = boat.status === "not_in_use";
   const isBlack = boat.classification === "black";
-  const isPrivate = boat.category === "private";
+  const isPrivate = boat.category === "private" || boat.category === "syndicate";
 
   return (
     <tr className={cn("border-t hover:bg-gray-50/50", isNotInUse && "opacity-50")}>
@@ -535,6 +584,8 @@ const BoatRow = memo(function BoatRow({
       )}
       {TIME_SLOTS.map((ts) => {
         const bookings = getBookings(boat.id, ts.slot);
+        const suggestedDaytimeRange =
+          ts.slot === 7 ? getSuggestedDaytimeBookingRange(bookings) : null;
         return (
           <BookingCell
             key={ts.slot}
@@ -544,7 +595,12 @@ const BoatRow = memo(function BoatRow({
             currentUserId={currentUserId}
             onBookingClick={onBookingClick}
             onAddClick={() =>
-              !isNotInUse && onCellClick("boat", boat.id, boat.name, ts.slot)
+              !isNotInUse &&
+              onCellClick("boat", boat.id, boat.name, ts.slot, {
+                initialEndSlot: ts.slot === 7 ? 7 : undefined,
+                initialStartMinutes: suggestedDaytimeRange?.startMinutes,
+                initialEndMinutes: suggestedDaytimeRange?.endMinutes,
+              })
             }
           />
         );
@@ -570,7 +626,17 @@ const ResourceRow = memo(function ResourceRow({
   resourceType: "equipment" | "oar_set";
   colorClass: string;
   getBookings: (id: string, slot: number) => SerializedBooking[];
-  onCellClick: (type: "equipment" | "oar_set", id: string, name: string, slot: number) => void;
+  onCellClick: (
+    type: "equipment" | "oar_set",
+    id: string,
+    name: string,
+    slot: number,
+    options?: {
+      initialEndSlot?: number;
+      initialStartMinutes?: number;
+      initialEndMinutes?: number;
+    }
+  ) => void;
   onBookingClick: (booking: SerializedBooking) => void;
   currentUserId: string;
 }) {
@@ -676,6 +742,9 @@ const BookingCell = memo(function BookingCell({
   }
 
   if (slot === 7) {
+    const suggestedRange = getSuggestedDaytimeBookingRange(bookings);
+    const canAddBooking = !!suggestedRange;
+
     return (
       <td className="px-1 py-1.5 align-top">
         <div className="space-y-1 min-w-[110px]">
@@ -711,11 +780,17 @@ const BookingCell = memo(function BookingCell({
             );
           })}
           <button
-            className="h-8 w-full rounded border border-dashed border-gray-200 hover:border-blue-400 hover:bg-blue-50/50 transition-colors text-[10px] text-muted-foreground"
+            className={cn(
+              "h-8 w-full rounded border border-dashed transition-colors text-[10px]",
+              canAddBooking
+                ? "border-gray-200 hover:border-blue-400 hover:bg-blue-50/50 text-muted-foreground"
+                : "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
+            )}
             onClick={onAddClick}
             aria-label="Add daytime booking"
+            disabled={!canAddBooking}
           >
-            {bookings.length === 0 ? "Book" : "Add"}
+            {bookings.length === 0 ? "Book" : canAddBooking ? "Add" : "Full"}
           </button>
         </div>
       </td>

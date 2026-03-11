@@ -1,7 +1,10 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
-import { formatBookingWindow } from "@/lib/booking-times";
+import {
+  formatBookingWindow,
+  getSuggestedDaytimeBookingRange,
+} from "@/lib/booking-times";
 import { cn } from "@/lib/utils";
 import { TIME_SLOTS, BOAT_SECTIONS } from "@/lib/constants";
 import { getBookingDisplayName } from "@/lib/booking-utils";
@@ -44,9 +47,21 @@ type Props = {
   user: UserProfile;
   getBookings: (resourceId: string, slot: number) => SerializedBooking[];
   onBookingClick: (booking: SerializedBooking) => void;
-  onSlotClick: (resourceType: "boat" | "equipment" | "oar_set", resourceId: string, resourceName: string, slot: number) => void;
+  onSlotClick: (
+    resourceType: "boat" | "equipment" | "oar_set",
+    resourceId: string,
+    resourceName: string,
+    slot: number,
+    options?: {
+      initialEndSlot?: number;
+      initialStartMinutes?: number;
+      initialEndMinutes?: number;
+    }
+  ) => void;
   onBoatInfoClick: (boat: BoatWithRelations) => void;
 };
+
+const SECTION_HEADER_STICKY_TOP = 41;
 
 export function MobileBookingView({
   tab,
@@ -105,7 +120,9 @@ export function MobileBookingView({
           sectionLabel: section.label,
         })));
       }
-      const privateBoats = boats.filter((b) => b.category === "private");
+      const privateBoats = boats.filter(
+        (b) => b.category === "private" || b.category === "syndicate"
+      );
       rows.push(...privateBoats.map((b) => ({
         id: b.id,
         name: b.name,
@@ -115,7 +132,7 @@ export function MobileBookingView({
         category: b.category,
         status: b.status,
         isOutside: b.isOutside,
-        sectionLabel: "Private Boats",
+        sectionLabel: "Private & Syndicate Boats",
       })));
       return rows;
     }
@@ -279,7 +296,7 @@ export function MobileBookingView({
             {filteredRows.map((row, index) => {
               const isNotInUse = row.status === "not_in_use";
               const isBlack = row.classification === "black";
-              const isPrivate = row.category === "private";
+              const isPrivate = row.category === "private" || row.category === "syndicate";
               const previousRow = filteredRows[index - 1];
               const showSectionHeader =
                 !!row.sectionLabel && row.sectionLabel !== previousRow?.sectionLabel;
@@ -288,10 +305,18 @@ export function MobileBookingView({
                 <Fragment key={row.id}>
                   {showSectionHeader && (
                     <tr key={`${row.sectionLabel}-header`} className="border-t bg-gray-50">
-                      <td className="sticky left-0 z-20 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      <td
+                        className="sticky left-0 z-30 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                        style={{ top: SECTION_HEADER_STICKY_TOP }}
+                      >
                         {row.sectionLabel}
                       </td>
-                      <td colSpan={TIME_SLOTS.length} className="bg-gray-50" aria-hidden="true" />
+                      <td
+                        colSpan={TIME_SLOTS.length}
+                        className="sticky z-20 bg-gray-50"
+                        style={{ top: SECTION_HEADER_STICKY_TOP }}
+                        aria-hidden="true"
+                      />
                     </tr>
                   )}
                   <tr key={row.id} className={cn("border-t", isNotInUse && "opacity-50")}>
@@ -336,6 +361,8 @@ export function MobileBookingView({
                       }
 
                       if (ts.slot === 7) {
+                        const suggestedDaytimeRange = getSuggestedDaytimeBookingRange(bookings);
+                        const canAddBooking = !!suggestedDaytimeRange;
                         return (
                           <td key={ts.slot} className="px-1 py-1.5 align-top">
                             <div className="space-y-1 min-w-[96px]">
@@ -369,11 +396,23 @@ export function MobileBookingView({
                                 );
                               })}
                               <button
-                                className="h-8 w-full rounded border border-dashed border-gray-200 hover:border-blue-400 hover:bg-blue-50/50 transition-colors text-[10px] text-muted-foreground"
-                                onClick={() => onSlotClick(row.resourceType, row.id, row.name, ts.slot)}
+                                className={cn(
+                                  "h-8 w-full rounded border border-dashed transition-colors text-[10px]",
+                                  canAddBooking
+                                    ? "border-gray-200 hover:border-blue-400 hover:bg-blue-50/50 text-muted-foreground"
+                                    : "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
+                                )}
+                                onClick={() =>
+                                  onSlotClick(row.resourceType, row.id, row.name, ts.slot, {
+                                    initialEndSlot: 7,
+                                    initialStartMinutes: suggestedDaytimeRange?.startMinutes,
+                                    initialEndMinutes: suggestedDaytimeRange?.endMinutes,
+                                  })
+                                }
                                 aria-label="Add daytime booking"
+                                disabled={!canAddBooking}
                               >
-                                {bookings.length === 0 ? "Book" : "Add"}
+                                {bookings.length === 0 ? "Book" : canAddBooking ? "Add" : "Full"}
                               </button>
                             </div>
                           </td>

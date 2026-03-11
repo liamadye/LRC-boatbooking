@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { validateBooking } from "@/lib/validation";
@@ -252,27 +253,47 @@ export async function POST(request: NextRequest) {
   }
 
   // Create booking
-  const booking = await prisma.booking.create({
-    data: {
-      date: bookingDate,
-      resourceType,
-      boatId: resourceType === "boat" ? resourceId : null,
-      equipmentId: resourceType === "equipment" ? resourceId : null,
-      oarSetId: resourceType === "oar_set" ? resourceId : null,
-      userId: user.id,
-      squadId: bookingSquad?.id ?? null,
-      bookerName: bookingSquad?.name ?? bookerName,
-      crewCount,
-      startSlot,
-      endSlot,
-      startMinutes: requestedStartMinutes,
-      endMinutes: requestedEndMinutes,
-      isRaceSpecific,
-      raceDetails,
-      notes,
-    },
-    include: { squad: { select: { id: true, name: true } } },
-  });
+  let booking;
+  try {
+    booking = await prisma.booking.create({
+      data: {
+        date: bookingDate,
+        resourceType,
+        boatId: resourceType === "boat" ? resourceId : null,
+        equipmentId: resourceType === "equipment" ? resourceId : null,
+        oarSetId: resourceType === "oar_set" ? resourceId : null,
+        userId: user.id,
+        squadId: bookingSquad?.id ?? null,
+        bookerName: bookingSquad?.name ?? bookerName,
+        crewCount,
+        startSlot,
+        endSlot,
+        startMinutes: requestedStartMinutes,
+        endMinutes: requestedEndMinutes,
+        isRaceSpecific,
+        raceDetails,
+        notes,
+      },
+      include: { squad: { select: { id: true, name: true } } },
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      return NextResponse.json(
+        {
+          errors: [
+            {
+              field: "slot",
+              message:
+                "This environment is still enforcing an old single-booking rule for this slot. Apply the precise booking-time migration before allowing multiple daytime bookings.",
+            },
+          ],
+        },
+        { status: 409 }
+      );
+    }
+
+    throw error;
+  }
 
   return NextResponse.json(serializeBooking(booking), { status: 201 });
 }

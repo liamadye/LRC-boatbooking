@@ -40,6 +40,52 @@ export function getDefaultBookingRange(slot: number) {
   };
 }
 
+export function getSuggestedDaytimeBookingRange(
+  bookings: BookingTimeLike[],
+  preferredDurationMinutes = 90
+) {
+  const daytimeStart = getDefaultStartMinutes(7);
+  const daytimeEnd = getDefaultEndMinutes(7);
+
+  if (bookings.length === 0) {
+    return {
+      startMinutes: daytimeStart,
+      endMinutes: Math.min(daytimeStart + preferredDurationMinutes, daytimeEnd),
+    };
+  }
+
+  const latestEndingBooking = bookings.reduce<BookingTimeLike | null>((latest, booking) => {
+    if (!latest) {
+      return booking;
+    }
+
+    const latestEnd = normalizeBookingMinutes(latest).endMinutes;
+    const bookingEnd = normalizeBookingMinutes(booking).endMinutes;
+    return bookingEnd > latestEnd ? booking : latest;
+  }, null);
+
+  if (!latestEndingBooking) {
+    return {
+      startMinutes: daytimeStart,
+      endMinutes: Math.min(daytimeStart + preferredDurationMinutes, daytimeEnd),
+    };
+  }
+
+  const startMinutes = Math.max(
+    daytimeStart,
+    normalizeBookingMinutes(latestEndingBooking).endMinutes
+  );
+
+  if (startMinutes >= daytimeEnd) {
+    return null;
+  }
+
+  return {
+    startMinutes,
+    endMinutes: Math.min(startMinutes + preferredDurationMinutes, daytimeEnd),
+  };
+}
+
 export function normalizeBookingMinutes(args: BookingTimeLike) {
   return {
     startMinutes: args.startMinutes ?? getDefaultStartMinutes(args.startSlot),

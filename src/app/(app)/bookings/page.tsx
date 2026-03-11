@@ -51,7 +51,7 @@ export default async function BookingsPage({
   // Filter private boats: only show to owner, users with explicit access, or admins
   const isPrivileged = ["admin", "captain", "vice_captain"].includes(userProfile.role);
   const visibleBoats = boats.filter((b) => {
-    if (b.category !== "private") return true;
+    if (b.category !== "private" && b.category !== "syndicate") return true;
     if (isPrivileged) return true;
     if (b.ownerUserId === userProfile.id) return true;
     if (b.privateBoatAccess.some((a) => a.userId === userProfile.id)) return true;

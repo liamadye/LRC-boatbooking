@@ -62,7 +62,7 @@ export function validateBooking(input: BookingInput): ValidationError[] {
   }
 
   // 3. Private boat check — must be owner or have explicit access
-  if (input.boatCategory === "private") {
+  if (input.boatCategory === "private" || input.boatCategory === "syndicate") {
     const isOwner = input.boatOwnerUserId === input.userId;
     const hasAccess = input.privateBoatAccessUserIds?.includes(input.userId) ?? false;
     if (!isOwner && !hasAccess && !isPrivilegedRole) {

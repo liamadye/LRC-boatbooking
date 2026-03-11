@@ -3,6 +3,7 @@
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -84,6 +85,9 @@ export function BookingDetailPopover({
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>{resourceName}</DialogTitle>
+          <DialogDescription className="sr-only">
+            Booking details and available actions for {resourceName}.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3 text-sm">
@@ -109,7 +113,7 @@ export function BookingDetailPopover({
               <span>{boat.boatType}</span>
             </div>
           )}
-          {(booking.isRaceSpecific || booking.squad || isOwner) && (
+          {(booking.isRaceSpecific || booking.squad || (!booking.squad && isOwner)) && (
             <div className="flex flex-wrap gap-2">
               {booking.isRaceSpecific && (
                 <Badge variant="secondary">Race-specific</Badge>
@@ -117,7 +121,7 @@ export function BookingDetailPopover({
               {booking.squad && (
                 <Badge variant="outline">Squad booking</Badge>
               )}
-              {isOwner && (
+              {!booking.squad && isOwner && (
                 <Badge variant="default" className="bg-blue-600">Your booking</Badge>
               )}
             </div>

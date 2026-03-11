@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -28,6 +29,9 @@ type BookingTarget = {
   resourceId: string;
   resourceName: string;
   slot: number;
+  initialEndSlot?: number;
+  initialStartMinutes?: number;
+  initialEndMinutes?: number;
 };
 
 type BookingPayload = {
@@ -82,8 +86,15 @@ export function BookingModal({
     ? user.squads.find((s) => s.id === editingBooking?.squadId)
     : null;
   const defaultRange = useMemo(
-    () => getDefaultBookingRange(target.slot),
-    [target.slot]
+    () => {
+      const fallback = getDefaultBookingRange(target.slot);
+      return {
+        endSlot: target.initialEndSlot ?? fallback.endSlot,
+        startMinutes: target.initialStartMinutes ?? fallback.startMinutes,
+        endMinutes: target.initialEndMinutes ?? fallback.endMinutes,
+      };
+    },
+    [target.initialEndSlot, target.initialEndMinutes, target.initialStartMinutes, target.slot]
   );
 
   const defaultSquad = matchingSquad ?? (canBookAsSquad ? user.squads[0] : null);
@@ -474,6 +485,9 @@ export function BookingModal({
       >
         <DialogHeader>
           <DialogTitle>{isEditing ? "Edit" : "Book"} {target.resourceName}</DialogTitle>
+          <DialogDescription className="sr-only">
+            {isEditing ? "Update the booking details." : "Create a new booking for this resource."}
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">

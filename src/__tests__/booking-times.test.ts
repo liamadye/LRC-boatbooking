@@ -4,6 +4,7 @@ import {
   formatBookingWindow,
   getDefaultBookingRange,
   getDaytimeOptionForMinutes,
+  getSuggestedDaytimeBookingRange,
   parseDaytimeTime,
 } from "@/lib/booking-times";
 
@@ -65,5 +66,24 @@ describe("booking-times", () => {
       startMinutes: 420,
       endMinutes: 510,
     });
+  });
+
+  it("suggests the next daytime range immediately after the latest existing booking", () => {
+    expect(
+      getSuggestedDaytimeBookingRange([
+        { startSlot: 7, endSlot: 7, startMinutes: 570, endMinutes: 630 },
+      ])
+    ).toEqual({
+      startMinutes: 630,
+      endMinutes: 720,
+    });
+  });
+
+  it("returns null when the daytime slot is already full", () => {
+    expect(
+      getSuggestedDaytimeBookingRange([
+        { startSlot: 7, endSlot: 7, startMinutes: 480, endMinutes: 990 },
+      ])
+    ).toBeNull();
   });
 });

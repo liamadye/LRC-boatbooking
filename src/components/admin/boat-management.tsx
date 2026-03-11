@@ -1,38 +1,98 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Button } from "@/components/ui/button";
+import {
+  ChevronDown,
+  ChevronRight,
+  Circle,
+  Loader2,
+  Lock,
+  Pencil,
+  Plus,
+  Trash2,
+  Users,
+  X,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Circle, Lock, Users, ChevronDown, ChevronRight, Loader2, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { BoatWithRelations } from "@/lib/types";
 
 type Squad = { id: string; name: string };
 type AdminUser = { id: string; fullName: string; email: string };
+
 const EMPTY_USER_IDS: string[] = [];
+const PRIVATE_LIKE_CATEGORIES = new Set<BoatWithRelations["category"]>(["private", "syndicate"]);
+const CATEGORY_OPTIONS: BoatWithRelations["category"][] = ["club", "private", "syndicate", "tinny"];
+const CLASSIFICATION_OPTIONS: BoatWithRelations["classification"][] = ["green", "black"];
+const STATUS_OPTIONS: BoatWithRelations["status"][] = ["available", "not_in_use"];
 
 type BoatApiResponse = {
   id: string;
+  name: string;
+  boatType: string;
+  category: BoatWithRelations["category"];
+  classification: BoatWithRelations["classification"];
+  status: BoatWithRelations["status"];
   ownerUserId: string | null;
   avgWeightKg: string | number | null;
-  status: BoatWithRelations["status"];
-  classification: BoatWithRelations["classification"];
   responsibleSquadId: string | null;
+  responsibleSquad?: { id: string; name: string } | null;
+  responsiblePerson: string | null;
   privateBoatAccess?: { userId: string }[];
+  privateBoatAccessUserIds?: string[];
+  displayOrder: number;
+  notes: string | null;
+  isOutside: boolean;
 };
 
-function normalizeBoat(boat: BoatApiResponse, previous: BoatWithRelations): BoatWithRelations {
+type BoatFormState = {
+  name: string;
+  boatType: string;
+  category: BoatWithRelations["category"];
+  classification: BoatWithRelations["classification"];
+  status: BoatWithRelations["status"];
+  responsibleSquadId: string;
+  ownerUserId: string;
+  avgWeightKg: string;
+  privateBoatAccessUserIds: string[];
+};
+
+function sortBoats(boats: BoatWithRelations[]) {
+  return [...boats].sort((left, right) => {
+    if (left.displayOrder !== right.displayOrder) {
+      return left.displayOrder - right.displayOrder;
+    }
+    return left.name.localeCompare(right.name);
+  });
+}
+
+function normalizeBoat(
+  boat: BoatApiResponse | BoatWithRelations,
+  previous?: BoatWithRelations
+): BoatWithRelations {
+  const privateBoatAccessUserIds =
+    "privateBoatAccess" in boat && Array.isArray(boat.privateBoatAccess)
+      ? boat.privateBoatAccess.map((entry) => entry.userId)
+      : previous?.privateBoatAccessUserIds ?? boat.privateBoatAccessUserIds ?? EMPTY_USER_IDS;
+
   return {
-    ...previous,
+    ...(previous ?? {}),
     ...boat,
     avgWeightKg:
       boat.avgWeightKg === null || boat.avgWeightKg === undefined
         ? null
         : Number(boat.avgWeightKg),
-    privateBoatAccessUserIds:
-      boat.privateBoatAccess?.map((entry) => entry.userId) ?? previous.privateBoatAccessUserIds ?? [],
+    privateBoatAccessUserIds,
   };
 }
 
@@ -42,6 +102,38 @@ function buildWeightDrafts(boats: BoatWithRelations[]) {
   );
 }
 
+function createEmptyForm(): BoatFormState {
+  return {
+    name: "",
+    boatType: "",
+    category: "club",
+    classification: "green",
+    status: "available",
+    responsibleSquadId: "",
+    ownerUserId: "",
+    avgWeightKg: "",
+    privateBoatAccessUserIds: [],
+  };
+}
+
+function createFormFromBoat(boat: BoatWithRelations): BoatFormState {
+  return {
+    name: boat.name,
+    boatType: boat.boatType,
+    category: boat.category,
+    classification: boat.classification,
+    status: boat.status,
+    responsibleSquadId: boat.responsibleSquadId ?? "",
+    ownerUserId: boat.ownerUserId ?? "",
+    avgWeightKg: boat.avgWeightKg == null ? "" : String(boat.avgWeightKg),
+    privateBoatAccessUserIds: boat.privateBoatAccessUserIds ?? [],
+  };
+}
+
+function isPrivateLikeCategory(category: BoatWithRelations["category"]) {
+  return PRIVATE_LIKE_CATEGORIES.has(category);
+}
+
 export function BoatManagement({
   boats,
   squads,
@@ -49,21 +141,29 @@ export function BoatManagement({
 }: {
   boats: BoatWithRelations[];
   squads: Squad[];
-  users?: AdminUser[];
+  users: AdminUser[];
 }) {
   const { toast } = useToast();
-  const [managedBoats, setManagedBoats] = useState(boats);
+  const [managedBoats, setManagedBoats] = useState(sortBoats(boats));
   const [weightDrafts, setWeightDrafts] = useState<Record<string, string>>(buildWeightDrafts(boats));
   const [expandedBoatId, setExpandedBoatId] = useState<string | null>(null);
   const [pendingActions, setPendingActions] = useState<Record<string, boolean>>({});
+  const [dialogMode, setDialogMode] = useState<"create" | "edit" | null>(null);
+  const [editingBoatId, setEditingBoatId] = useState<string | null>(null);
+  const [formState, setFormState] = useState<BoatFormState>(createEmptyForm());
 
   useEffect(() => {
-    setManagedBoats(boats);
+    setManagedBoats(sortBoats(boats));
     setWeightDrafts(buildWeightDrafts(boats));
   }, [boats]);
 
-  function setPending(boatId: string, action: string, pending: boolean) {
-    const key = `${boatId}:${action}`;
+  const editingBoat = useMemo(
+    () => managedBoats.find((boat) => boat.id === editingBoatId) ?? null,
+    [editingBoatId, managedBoats]
+  );
+  const formIsPrivateLike = isPrivateLikeCategory(formState.category);
+
+  function setPending(key: string, pending: boolean) {
     setPendingActions((current) => {
       if (!pending) {
         const next = { ...current };
@@ -78,13 +178,13 @@ export function BoatManagement({
     });
   }
 
-  function isPending(boatId: string, action: string) {
-    return !!pendingActions[`${boatId}:${action}`];
+  function isPending(key: string) {
+    return !!pendingActions[key];
   }
 
   async function mutateBoat(args: {
     boatId: string;
-    action: "status" | "classification" | "owner" | "access" | "weight" | "responsibleSquad";
+    action: string;
     payload: Record<string, unknown>;
     optimistic: (boat: BoatWithRelations) => BoatWithRelations;
     successTitle: string;
@@ -96,10 +196,11 @@ export function BoatManagement({
       return;
     }
 
+    const pendingKey = `${args.boatId}:${args.action}`;
     setManagedBoats((current) =>
-      current.map((boat) => (boat.id === args.boatId ? args.optimistic(boat) : boat))
+      sortBoats(current.map((boat) => (boat.id === args.boatId ? args.optimistic(boat) : boat)))
     );
-    setPending(args.boatId, args.action, true);
+    setPending(pendingKey, true);
 
     try {
       const res = await fetch(`/api/admin/boats/${args.boatId}`, {
@@ -118,19 +219,23 @@ export function BoatManagement({
       }
 
       setManagedBoats((current) =>
-        current.map((boat) =>
-          boat.id === args.boatId ? normalizeBoat(data as BoatApiResponse, boat) : boat
+        sortBoats(
+          current.map((boat) =>
+            boat.id === args.boatId ? normalizeBoat(data as BoatApiResponse, boat) : boat
+          )
         )
       );
       setWeightDrafts((current) => ({
         ...current,
         [args.boatId]:
-          data.avgWeightKg === null || data.avgWeightKg === undefined ? "" : String(Number(data.avgWeightKg)),
+          data.avgWeightKg === null || data.avgWeightKg === undefined
+            ? ""
+            : String(Number(data.avgWeightKg)),
       }));
       toast({ title: args.successTitle });
     } catch (error) {
       setManagedBoats((current) =>
-        current.map((boat) => (boat.id === args.boatId ? previousBoat : boat))
+        sortBoats(current.map((boat) => (boat.id === args.boatId ? previousBoat : boat)))
       );
       setWeightDrafts((current) => ({
         ...current,
@@ -144,7 +249,7 @@ export function BoatManagement({
         variant: "destructive",
       });
     } finally {
-      setPending(args.boatId, args.action, false);
+      setPending(pendingKey, false);
     }
   }
 
@@ -236,21 +341,228 @@ export function BoatManagement({
     });
   }
 
+  function openCreateDialog() {
+    setDialogMode("create");
+    setEditingBoatId(null);
+    setFormState(createEmptyForm());
+  }
+
+  function openEditDialog(boat: BoatWithRelations) {
+    setDialogMode("edit");
+    setEditingBoatId(boat.id);
+    setFormState(createFormFromBoat(boat));
+  }
+
+  function closeDialog() {
+    setDialogMode(null);
+    setEditingBoatId(null);
+    setFormState(createEmptyForm());
+  }
+
+  function updateForm<K extends keyof BoatFormState>(key: K, value: BoatFormState[K]) {
+    setFormState((current) => ({
+      ...current,
+      [key]: value,
+      ...(key === "category" && !isPrivateLikeCategory(value as BoatWithRelations["category"])
+        ? { ownerUserId: "", privateBoatAccessUserIds: [] }
+        : {}),
+    }));
+  }
+
+  function addFormAccessUser(userId: string) {
+    if (!userId) {
+      return;
+    }
+
+    setFormState((current) => ({
+      ...current,
+      privateBoatAccessUserIds: current.privateBoatAccessUserIds.includes(userId)
+        ? current.privateBoatAccessUserIds
+        : [...current.privateBoatAccessUserIds, userId],
+    }));
+  }
+
+  function removeFormAccessUser(userId: string) {
+    setFormState((current) => ({
+      ...current,
+      privateBoatAccessUserIds: current.privateBoatAccessUserIds.filter((entry) => entry !== userId),
+    }));
+  }
+
+  async function saveBoatForm() {
+    const name = formState.name.trim();
+    const boatType = formState.boatType.trim();
+    const weightDraft = formState.avgWeightKg.trim();
+
+    if (name.length === 0) {
+      toast({ title: "Boat name is required", variant: "destructive" });
+      return;
+    }
+
+    if (boatType.length === 0) {
+      toast({ title: "Boat type is required", variant: "destructive" });
+      return;
+    }
+
+    if (weightDraft !== "" && Number.isNaN(Number(weightDraft))) {
+      toast({
+        title: "Invalid weight",
+        description: "Weight must be a number in kilograms.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const payload = {
+      name,
+      boatType,
+      category: formState.category,
+      classification: formState.classification,
+      status: formState.status,
+      responsibleSquadId: formState.responsibleSquadId || null,
+      ownerUserId: formIsPrivateLike ? formState.ownerUserId || null : null,
+      avgWeightKg: weightDraft === "" ? null : Number(weightDraft),
+      privateBoatAccessUserIds: formIsPrivateLike ? formState.privateBoatAccessUserIds : [],
+    };
+
+    const pendingKey = dialogMode === "create" ? "boat:create" : `boat:${editingBoatId}:details`;
+    setPending(pendingKey, true);
+
+    try {
+      const res = await fetch(
+        dialogMode === "create" ? "/api/admin/boats" : `/api/admin/boats/${editingBoatId}`,
+        {
+          method: dialogMode === "create" ? "POST" : "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(
+          typeof data === "object" && data !== null && "error" in data && typeof data.error === "string"
+            ? data.error
+            : "Request failed."
+        );
+      }
+
+      if (dialogMode === "create") {
+        const createdBoat = normalizeBoat(data as BoatApiResponse);
+        setManagedBoats((current) => sortBoats([...current, createdBoat]));
+        setWeightDrafts((current) => ({
+          ...current,
+          [createdBoat.id]: createdBoat.avgWeightKg == null ? "" : String(createdBoat.avgWeightKg),
+        }));
+        toast({ title: "Boat created" });
+      } else if (editingBoatId) {
+        setManagedBoats((current) =>
+          sortBoats(
+            current.map((boat) =>
+              boat.id === editingBoatId ? normalizeBoat(data as BoatApiResponse, boat) : boat
+            )
+          )
+        );
+        setWeightDrafts((current) => ({
+          ...current,
+          [editingBoatId]:
+            data.avgWeightKg === null || data.avgWeightKg === undefined
+              ? ""
+              : String(Number(data.avgWeightKg)),
+        }));
+        toast({ title: "Boat updated" });
+      }
+
+      closeDialog();
+    } catch (error) {
+      toast({
+        title: dialogMode === "create" ? "Failed to create boat" : "Failed to update boat",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setPending(pendingKey, false);
+    }
+  }
+
+  async function deleteBoat(boat: BoatWithRelations) {
+    if (!window.confirm(`Delete ${boat.name}? This cannot be undone.`)) {
+      return;
+    }
+
+    const pendingKey = `${boat.id}:delete`;
+    setPending(pendingKey, true);
+
+    try {
+      const res = await fetch(`/api/admin/boats/${boat.id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(
+          typeof data === "object" && data !== null && "error" in data && typeof data.error === "string"
+            ? data.error
+            : "Request failed."
+        );
+      }
+
+      setManagedBoats((current) => current.filter((entry) => entry.id !== boat.id));
+      setWeightDrafts((current) => {
+        const next = { ...current };
+        delete next[boat.id];
+        return next;
+      });
+      if (expandedBoatId === boat.id) {
+        setExpandedBoatId(null);
+      }
+      toast({ title: "Boat deleted" });
+    } catch (error) {
+      toast({
+        title: "Failed to delete boat",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setPending(pendingKey, false);
+    }
+  }
+
+  const availableFormAccessUsers = users.filter(
+    (user) =>
+      user.id !== formState.ownerUserId && !formState.privateBoatAccessUserIds.includes(user.id)
+  );
+  const selectedFormAccessUsers = users.filter((user) =>
+    formState.privateBoatAccessUserIds.includes(user.id)
+  );
+
   return (
-    <div className="space-y-2 mt-4">
+    <div className="space-y-3 mt-4">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-semibold">Boat Management</h2>
+          <p className="text-xs text-muted-foreground">
+            Create, edit, disable, and delete boats. Private and syndicate boats can also manage owners and access.
+          </p>
+        </div>
+        <Button onClick={openCreateDialog}>
+          <Plus className="mr-2 h-4 w-4" />
+          Add Boat
+        </Button>
+      </div>
+
       {managedBoats.map((boat) => {
         const isExpanded = expandedBoatId === boat.id;
-        const isPrivate = boat.category === "private" || boat.category === "syndicate";
-        const ownerSaving = isPending(boat.id, "owner");
-        const accessSaving = isPending(boat.id, "access");
-        const weightSaving = isPending(boat.id, "weight");
-        const statusSaving = isPending(boat.id, "status");
-        const classificationSaving = isPending(boat.id, "classification");
+        const isPrivateLike = isPrivateLikeCategory(boat.category);
+        const ownerSaving = isPending(`${boat.id}:owner`);
+        const accessSaving = isPending(`${boat.id}:access`);
+        const weightSaving = isPending(`${boat.id}:weight`);
+        const statusSaving = isPending(`${boat.id}:status`);
+        const classificationSaving = isPending(`${boat.id}:classification`);
+        const deleteSaving = isPending(`${boat.id}:delete`);
 
         return (
           <Card key={boat.id} className={boat.status === "not_in_use" ? "opacity-60" : ""}>
             <CardContent className="py-3">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-3 min-w-0">
                   {boat.classification === "black" ? (
                     <Circle className="h-4 w-4 flex-shrink-0 fill-gray-800 text-gray-800" style={{ aspectRatio: "1/1" }} />
@@ -260,9 +572,7 @@ export function BoatManagement({
                   <div className="min-w-0">
                     <div className="font-medium truncate">
                       {boat.name}
-                      {boat.category === "private" && (
-                        <Lock className="inline h-3 w-3 ml-1 text-blue-500" />
-                      )}
+                      {isPrivateLike && <Lock className="inline h-3 w-3 ml-1 text-blue-500" />}
                     </div>
                     <div className="text-xs text-muted-foreground flex items-center gap-1 flex-wrap">
                       <span>{boat.boatType}</span>
@@ -282,9 +592,10 @@ export function BoatManagement({
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-1 flex-wrap">
+
+                <div className="flex items-center gap-1 flex-wrap justify-end">
                   <Badge variant="outline">{boat.category}</Badge>
-                  {isPrivate && (
+                  {isPrivateLike && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -304,6 +615,15 @@ export function BoatManagement({
                     variant="ghost"
                     size="sm"
                     className="h-8 text-xs px-2"
+                    onClick={() => openEditDialog(boat)}
+                  >
+                    <Pencil className="mr-1 h-4 w-4" />
+                    Edit
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs px-2"
                     onClick={() => toggleClassification(boat.id, boat.classification)}
                     disabled={classificationSaving}
                   >
@@ -319,6 +639,15 @@ export function BoatManagement({
                   >
                     {statusSaving && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
                     {boat.status === "not_in_use" ? "Enable" : "Disable"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2 text-red-600 hover:text-red-700"
+                    onClick={() => deleteBoat(boat)}
+                    disabled={deleteSaving}
+                  >
+                    {deleteSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                   </Button>
                 </div>
               </div>
@@ -352,7 +681,7 @@ export function BoatManagement({
                 </Button>
               </div>
 
-              {isExpanded && isPrivate && users && (
+              {isExpanded && isPrivateLike && (
                 <PrivateBoatAccessPanel
                   boat={boat}
                   users={users}
@@ -366,6 +695,185 @@ export function BoatManagement({
           </Card>
         );
       })}
+
+      <Dialog open={dialogMode !== null} onOpenChange={(open) => !open && closeDialog()}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{dialogMode === "create" ? "Add Boat" : `Edit ${editingBoat?.name ?? "Boat"}`}</DialogTitle>
+            <DialogDescription>
+              Configure the boat details, category, and private access settings.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Boat name</label>
+              <Input
+                className="mt-1"
+                value={formState.name}
+                onChange={(event) => updateForm("name", event.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Boat type</label>
+              <Input
+                className="mt-1"
+                value={formState.boatType}
+                onChange={(event) => updateForm("boatType", event.target.value)}
+                placeholder="e.g. 8+, 4x/4-/4+, 1x"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Category</label>
+              <select
+                className="mt-1 block w-full rounded-md border px-3 py-2 text-sm"
+                value={formState.category}
+                onChange={(event) =>
+                  updateForm("category", event.target.value as BoatWithRelations["category"])
+                }
+              >
+                {CATEGORY_OPTIONS.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Responsible squad</label>
+              <select
+                className="mt-1 block w-full rounded-md border px-3 py-2 text-sm"
+                value={formState.responsibleSquadId}
+                onChange={(event) => updateForm("responsibleSquadId", event.target.value)}
+              >
+                <option value="">Unassigned</option>
+                {squads.map((squad) => (
+                  <option key={squad.id} value={squad.id}>
+                    {squad.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Classification</label>
+              <select
+                className="mt-1 block w-full rounded-md border px-3 py-2 text-sm"
+                value={formState.classification}
+                onChange={(event) =>
+                  updateForm(
+                    "classification",
+                    event.target.value as BoatWithRelations["classification"]
+                  )
+                }
+              >
+                {CLASSIFICATION_OPTIONS.map((classification) => (
+                  <option key={classification} value={classification}>
+                    {classification}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Status</label>
+              <select
+                className="mt-1 block w-full rounded-md border px-3 py-2 text-sm"
+                value={formState.status}
+                onChange={(event) =>
+                  updateForm("status", event.target.value as BoatWithRelations["status"])
+                }
+              >
+                {STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>
+                    {status}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Boat weight (kg)</label>
+              <Input
+                className="mt-1"
+                type="number"
+                step="0.1"
+                inputMode="decimal"
+                value={formState.avgWeightKg}
+                onChange={(event) => updateForm("avgWeightKg", event.target.value)}
+              />
+            </div>
+          </div>
+
+          {formIsPrivateLike && (
+            <div className="space-y-3 rounded-lg border p-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Owner</label>
+                <select
+                  className="mt-1 block w-full rounded-md border px-3 py-2 text-sm"
+                  value={formState.ownerUserId}
+                  onChange={(event) => updateForm("ownerUserId", event.target.value)}
+                >
+                  <option value="">No owner</option>
+                  {users.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.fullName} ({user.email})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">
+                  Allowed users ({selectedFormAccessUsers.length})
+                </label>
+                {selectedFormAccessUsers.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {selectedFormAccessUsers.map((user) => (
+                      <Badge key={user.id} variant="secondary" className="gap-1">
+                        {user.fullName}
+                        <button
+                          type="button"
+                          className="hover:text-red-600"
+                          onClick={() => removeFormAccessUser(user.id)}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-2 flex gap-2">
+                  <select
+                    className="flex-1 rounded-md border px-3 py-2 text-sm"
+                    value=""
+                    onChange={(event) => addFormAccessUser(event.target.value)}
+                  >
+                    <option value="">Select a member to add...</option>
+                    {availableFormAccessUsers.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.fullName} ({user.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={closeDialog}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void saveBoatForm()}
+              disabled={isPending(dialogMode === "create" ? "boat:create" : `boat:${editingBoatId}:details`)}
+            >
+              {isPending(dialogMode === "create" ? "boat:create" : `boat:${editingBoatId}:details`) && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              {dialogMode === "create" ? "Create Boat" : "Save Changes"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -444,6 +952,7 @@ function PrivateBoatAccessPanel({
               <Badge key={user.id} variant="secondary" className="gap-1">
                 {user.fullName}
                 <button
+                  type="button"
                   onClick={() => handleRemoveUser(user.id)}
                   disabled={accessSaving}
                   className="hover:text-red-600 disabled:opacity-50"
