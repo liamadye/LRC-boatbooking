@@ -2,34 +2,22 @@ import { describe, it, expect } from "vitest";
 import { supportsSquadBooking, getBookingDisplayName } from "@/lib/booking-utils";
 
 describe("supportsSquadBooking", () => {
-  it("returns true for 8+", () => {
-    expect(supportsSquadBooking("8+")).toBe(true);
+  it("returns true for eights", () => {
+    expect(supportsSquadBooking("eight")).toBe(true);
   });
 
-  it("returns true for 4x/4-/4+", () => {
-    expect(supportsSquadBooking("4x/4-/4+")).toBe(true);
+  it("returns true for fours", () => {
+    expect(supportsSquadBooking("four")).toBe(true);
   });
 
-  it("returns true for 4x/4-", () => {
-    expect(supportsSquadBooking("4x/4-")).toBe(true);
+  it("returns false for singles and pairs", () => {
+    expect(supportsSquadBooking("single")).toBe(false);
+    expect(supportsSquadBooking("pair")).toBe(false);
   });
 
-  it("returns false for 1x", () => {
-    expect(supportsSquadBooking("1x")).toBe(false);
-  });
-
-  it("returns false for 2x", () => {
-    expect(supportsSquadBooking("2x")).toBe(false);
-  });
-
-  it("returns false for 2-/x", () => {
-    expect(supportsSquadBooking("2-/x")).toBe(false);
-  });
-
-  it("returns false for null/undefined", () => {
+  it("returns false for null and undefined", () => {
     expect(supportsSquadBooking(null)).toBe(false);
     expect(supportsSquadBooking(undefined)).toBe(false);
-    expect(supportsSquadBooking("")).toBe(false);
   });
 });
 

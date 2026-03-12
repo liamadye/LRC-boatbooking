@@ -3,8 +3,8 @@ import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
-
-const PRIVATE_LIKE_CATEGORIES = new Set(["private", "syndicate"]);
+import { deriveBoatTypeLabel, isPrivateLikeCategory, normalizeBoatSpec, validateBoatSpec, type BoatCategory, type BoatClass } from "@/lib/boats";
+import { serializeBoat } from "@/lib/boat-serialization";
 
 function normalizeWeight(value: unknown) {
   if (value === "" || value === null || value === undefined) {
@@ -15,6 +15,25 @@ function normalizeWeight(value: unknown) {
   return Number.isFinite(numericValue) ? numericValue : NaN;
 }
 
+function parseBoatSpec(body: Record<string, unknown>) {
+  if (!body.boatClass || !["eight", "four", "pair", "single", "tinny"].includes(String(body.boatClass))) {
+    return { error: "Boat type is required." } as const;
+  }
+
+  const normalized = normalizeBoatSpec({
+    boatClass: body.boatClass as BoatClass,
+    supportsSweep: body.supportsSweep === true,
+    supportsScull: body.supportsScull === true,
+    isCoxed: body.isCoxed === true,
+  });
+  const specError = validateBoatSpec(normalized);
+  if (specError) {
+    return { error: specError } as const;
+  }
+
+  return { spec: normalized } as const;
+}
+
 export async function POST(request: NextRequest) {
   const admin = await requirePermission("manage_boats");
   if (!admin) {
@@ -23,8 +42,7 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
   const name = typeof body.name === "string" ? body.name.trim() : "";
-  const boatType = typeof body.boatType === "string" ? body.boatType.trim() : "";
-  const category =
+  const category: BoatCategory =
     body.category === "private" ||
     body.category === "syndicate" ||
     body.category === "tinny"
@@ -37,14 +55,14 @@ export async function POST(request: NextRequest) {
       ? body.responsibleSquadId
       : null;
   const ownerUserId =
-    PRIVATE_LIKE_CATEGORIES.has(category) &&
+    isPrivateLikeCategory(category) &&
     typeof body.ownerUserId === "string" &&
     body.ownerUserId.length > 0
       ? body.ownerUserId
       : null;
   const avgWeightKg = normalizeWeight(body.avgWeightKg);
   const privateBoatAccessUserIds =
-    PRIVATE_LIKE_CATEGORIES.has(category) && Array.isArray(body.privateBoatAccessUserIds)
+    isPrivateLikeCategory(category) && Array.isArray(body.privateBoatAccessUserIds)
       ? body.privateBoatAccessUserIds.filter(
           (entry: unknown): entry is string => typeof entry === "string" && entry.length > 0
         )
@@ -54,13 +72,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Boat name is required." }, { status: 400 });
   }
 
-  if (boatType.length === 0) {
-    return NextResponse.json({ error: "Boat type is required." }, { status: 400 });
+  const parsedBoatSpec = parseBoatSpec(body);
+  if ("error" in parsedBoatSpec) {
+    return NextResponse.json({ error: parsedBoatSpec.error }, { status: 400 });
   }
 
   if (Number.isNaN(avgWeightKg)) {
     return NextResponse.json({ error: "Boat weight must be numeric." }, { status: 400 });
   }
+
+  const boatType = deriveBoatTypeLabel(parsedBoatSpec.spec);
 
   const lastBoat = await prisma.boat.findFirst({
     orderBy: { displayOrder: "desc" },
@@ -72,6 +93,10 @@ export async function POST(request: NextRequest) {
       data: {
         name,
         boatType,
+        boatClass: parsedBoatSpec.spec.boatClass,
+        supportsSweep: parsedBoatSpec.spec.supportsSweep,
+        supportsScull: parsedBoatSpec.spec.supportsScull,
+        isCoxed: parsedBoatSpec.spec.isCoxed,
         category,
         classification,
         status,
@@ -109,6 +134,10 @@ export async function POST(request: NextRequest) {
     after: {
       name: boat.name,
       boatType: boat.boatType,
+      boatClass: boat.boatClass,
+      supportsSweep: boat.supportsSweep,
+      supportsScull: boat.supportsScull,
+      isCoxed: boat.isCoxed,
       category: boat.category,
       classification: boat.classification,
       status: boat.status,
@@ -120,5 +149,5 @@ export async function POST(request: NextRequest) {
 
   revalidateTag("boats");
 
-  return NextResponse.json(boat, { status: 201 });
+  return NextResponse.json(serializeBoat(boat), { status: 201 });
 }

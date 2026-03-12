@@ -3,8 +3,8 @@ import { revalidateTag } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
-
-const PRIVATE_LIKE_CATEGORIES = new Set(["private", "syndicate"]);
+import { deriveBoatTypeLabel, isPrivateLikeCategory, normalizeBoatSpec, validateBoatSpec, type BoatCategory, type BoatClass } from "@/lib/boats";
+import { serializeBoat } from "@/lib/boat-serialization";
 
 function normalizeWeight(value: unknown) {
   if (value === "" || value === null || value === undefined) {
@@ -13,6 +13,29 @@ function normalizeWeight(value: unknown) {
 
   const numericValue = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numericValue) ? numericValue : NaN;
+}
+
+function parseBoatSpec(body: Record<string, unknown>) {
+  if (body.boatClass === undefined) {
+    return { spec: null } as const;
+  }
+
+  if (!["eight", "four", "pair", "single", "tinny"].includes(String(body.boatClass))) {
+    return { error: "Boat type is required." } as const;
+  }
+
+  const normalized = normalizeBoatSpec({
+    boatClass: body.boatClass as BoatClass,
+    supportsSweep: body.supportsSweep === true,
+    supportsScull: body.supportsScull === true,
+    isCoxed: body.isCoxed === true,
+  });
+  const specError = validateBoatSpec(normalized);
+  if (specError) {
+    return { error: specError } as const;
+  }
+
+  return { spec: normalized } as const;
 }
 
 export async function PATCH(
@@ -48,12 +71,16 @@ export async function PATCH(
     updateData.name = name;
   }
 
-  if (body.boatType !== undefined) {
-    const boatType = typeof body.boatType === "string" ? body.boatType.trim() : "";
-    if (boatType.length === 0) {
-      return NextResponse.json({ error: "Boat type is required." }, { status: 400 });
-    }
-    updateData.boatType = boatType;
+  const parsedBoatSpec = parseBoatSpec(body);
+  if ("error" in parsedBoatSpec) {
+    return NextResponse.json({ error: parsedBoatSpec.error }, { status: 400 });
+  }
+  if (parsedBoatSpec.spec) {
+    updateData.boatClass = parsedBoatSpec.spec.boatClass;
+    updateData.supportsSweep = parsedBoatSpec.spec.supportsSweep;
+    updateData.supportsScull = parsedBoatSpec.spec.supportsScull;
+    updateData.isCoxed = parsedBoatSpec.spec.isCoxed;
+    updateData.boatType = deriveBoatTypeLabel(parsedBoatSpec.spec);
   }
 
   if (body.category !== undefined) {
@@ -81,12 +108,11 @@ export async function PATCH(
     updateData.responsibleSquadId = body.responsibleSquadId || null;
   }
 
-  const nextCategory = (updateData.category as string | undefined) ?? before.category;
-  const isPrivateLike = PRIVATE_LIKE_CATEGORIES.has(nextCategory);
+  const nextCategory = ((updateData.category as BoatCategory | undefined) ?? before.category) as BoatCategory;
+  const isPrivateLike = isPrivateLikeCategory(nextCategory);
 
   if (body.ownerUserId !== undefined) {
-    updateData.ownerUserId =
-      isPrivateLike && body.ownerUserId ? body.ownerUserId : null;
+    updateData.ownerUserId = isPrivateLike && body.ownerUserId ? body.ownerUserId : null;
   } else if (!isPrivateLike) {
     updateData.ownerUserId = null;
   }
@@ -141,6 +167,10 @@ export async function PATCH(
     before: {
       name: before.name,
       boatType: before.boatType,
+      boatClass: before.boatClass,
+      supportsSweep: before.supportsSweep,
+      supportsScull: before.supportsScull,
+      isCoxed: before.isCoxed,
       category: before.category,
       status: before.status,
       classification: before.classification,
@@ -152,6 +182,10 @@ export async function PATCH(
     after: {
       name: boat.name,
       boatType: boat.boatType,
+      boatClass: boat.boatClass,
+      supportsSweep: boat.supportsSweep,
+      supportsScull: boat.supportsScull,
+      isCoxed: boat.isCoxed,
       category: boat.category,
       status: boat.status,
       classification: boat.classification,
@@ -164,7 +198,7 @@ export async function PATCH(
 
   revalidateTag("boats");
 
-  return NextResponse.json(boat);
+  return NextResponse.json(serializeBoat(boat));
 }
 
 export async function DELETE(
@@ -209,6 +243,10 @@ export async function DELETE(
     before: {
       name: boat.name,
       boatType: boat.boatType,
+      boatClass: boat.boatClass,
+      supportsSweep: boat.supportsSweep,
+      supportsScull: boat.supportsScull,
+      isCoxed: boat.isCoxed,
       category: boat.category,
       classification: boat.classification,
       status: boat.status,

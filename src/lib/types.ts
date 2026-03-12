@@ -1,9 +1,15 @@
 /** Types used across the booking UI */
 
+import type { BoatClass } from "@/lib/boats";
+
 export type BoatWithRelations = {
   id: string;
   name: string;
-  boatType: string;
+  boatClass: BoatClass;
+  supportsSweep: boolean;
+  supportsScull: boolean;
+  isCoxed: boolean;
+  boatTypeLabel: string;
   category: "club" | "private" | "syndicate" | "tinny";
   classification: "black" | "green";
   status: "available" | "not_in_use";
@@ -48,9 +54,9 @@ export type BookingSlot = {
 };
 
 export type DayBookings = {
-  boats: Record<string, BookingSlot[]>;       // boatId -> bookings
-  equipment: Record<string, BookingSlot[]>;   // equipmentId -> bookings
-  oarSets: Record<string, BookingSlot[]>;     // oarSetId -> bookings
+  boats: Record<string, BookingSlot[]>;
+  equipment: Record<string, BookingSlot[]>;
+  oarSets: Record<string, BookingSlot[]>;
 };
 
 export type SerializedBooking = {

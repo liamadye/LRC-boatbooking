@@ -12,14 +12,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Textarea } from "@/components/ui/textarea";
-import { TIME_SLOTS, MAX_CREW, DAYTIME_TIMES } from "@/lib/constants";
+import { TIME_SLOTS, DAYTIME_TIMES } from "@/lib/constants";
 import {
   getDefaultBookingRange,
   getDaytimeOptionForMinutes,
   getDefaultEndMinutes,
   parseDaytimeTime,
 } from "@/lib/booking-times";
+import {
+  getMaxCrewForBoat,
+  supportsCoxedBookingOption,
+  supportsSquadBooking,
+} from "@/lib/boats";
 
 import { useToast } from "@/hooks/use-toast";
 import type { BoatWithRelations, SerializedBooking, UserProfile } from "@/lib/types";
@@ -73,15 +77,23 @@ export function BookingModal({
   const isEditing = !!editingBooking;
   const boat = boats.find((b) => b.id === target.resourceId);
 
-  // Show coxed toggle for any boat type containing "+" that also has uncoxed options
-  // e.g. "4x/4-/4+" supports coxed (5 crew) and uncoxed (4 crew)
-  // Also show for pure "4+" to allow uncoxed rowing
-  const hasCoxOption = !!boat && boat.boatType.includes("+") && boat.boatType !== "8+";
-  const coxedCrew = boat ? (MAX_CREW[boat.boatType] ?? 1) : 1;
+  const baseMaxCrew = boat
+    ? getMaxCrewForBoat({
+        boatClass: boat.boatClass,
+        supportsSweep: boat.supportsSweep,
+        supportsScull: boat.supportsScull,
+        isCoxed: boat.isCoxed,
+      })
+    : 1;
+  const hasCoxOption = !!boat && supportsCoxedBookingOption(boat);
+  const coxedCrew = baseMaxCrew;
   const uncoxedCrew = hasCoxOption ? coxedCrew - 1 : coxedCrew;
-
-  const maxCrew = boat ? (MAX_CREW[boat.boatType] ?? 1) : 1;
-  const canBookAsSquad = user.squads.length > 0;
+  const maxCrew = hasCoxOption ? coxedCrew : baseMaxCrew;
+  const canBookAsSquad =
+    target.resourceType === "boat" &&
+    !!boat &&
+    supportsSquadBooking(boat.boatClass) &&
+    user.squads.length > 0;
   const matchingSquad = canBookAsSquad
     ? user.squads.find((s) => s.id === editingBooking?.squadId)
     : null;
@@ -126,8 +138,8 @@ export function BookingModal({
       ? getDaytimeOptionForMinutes(editingBooking?.endMinutes ?? defaultRange.endMinutes)
       : ""
   );
-  const [isRaceSpecific, setIsRaceSpecific] = useState(editingBooking?.isRaceSpecific ?? false);
-  const [raceDetails, setRaceDetails] = useState(editingBooking?.raceDetails ?? "");
+  const [isRaceSpecific] = useState(editingBooking?.isRaceSpecific ?? false);
+  const [raceDetails] = useState(editingBooking?.raceDetails ?? "");
   const [notes] = useState(editingBooking?.notes ?? "");
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
@@ -495,7 +507,7 @@ export function BookingModal({
             {selectedDate} — Slot: {slotLabel}
             {boat && (
               <>
-                {" "}— Type: {boat.boatType}
+                {" "}— Type: {boat.boatTypeLabel}
                 {boat.avgWeightKg && ` — Weight: ${boat.avgWeightKg}kg`}
                 {boat.classification === "black" && (
                   <span className="ml-1 text-amber-600 font-medium">
@@ -581,7 +593,8 @@ export function BookingModal({
                 </div>
               )}
               <div className="text-sm text-muted-foreground">
-                Crew: {effectiveCrew}{isCoxed && boat.boatType.includes("+") ? ` (${effectiveCrew - 1} + cox)` : ""}
+                Crew: {effectiveCrew}
+                {hasCoxOption && isCoxed ? ` (${effectiveCrew - 1} + cox)` : ""}
               </div>
             </div>
           )}
@@ -603,34 +616,6 @@ export function BookingModal({
               ))}
             </select>
           </div>
-
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="raceSpecific"
-              checked={isRaceSpecific}
-              onCheckedChange={(checked) =>
-                setIsRaceSpecific(checked === true)
-              }
-            />
-            <Label htmlFor="raceSpecific" className="text-sm">
-              Race-specific booking (priority allocation)
-            </Label>
-          </div>
-
-          {isRaceSpecific && (
-            <div>
-              <Label htmlFor="raceDetails">
-                Training days & target regattas
-              </Label>
-              <Textarea
-                id="raceDetails"
-                value={raceDetails}
-                onChange={(e) => setRaceDetails(e.target.value)}
-                placeholder="e.g. Tue/Thu 5am, targeting State Championships April"
-                required
-              />
-            </div>
-          )}
 
           {(showDaytimeStartSelector || showDaytimeEndSelector) && (
             <div className="space-y-2">

@@ -110,7 +110,7 @@ export function BookingDetailPopover({
           {boat && (
             <div className="flex justify-between">
               <span className="text-muted-foreground">Boat type</span>
-              <span>{boat.boatType}</span>
+              <span>{boat.boatTypeLabel}</span>
             </div>
           )}
           {(booking.isRaceSpecific || booking.squad || (!booking.squad && isOwner)) && (

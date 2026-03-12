@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { serializeBooking } from "@/lib/booking-utils";
+import { deriveBoatTypeLabel } from "@/lib/boats";
 import { getSydneyToday } from "@/lib/sydney-time";
 
 export async function GET() {
@@ -36,7 +37,15 @@ export async function GET() {
       ],
     },
     include: {
-      boat: { select: { name: true, boatType: true } },
+      boat: {
+        select: {
+          name: true,
+          boatClass: true,
+          supportsSweep: true,
+          supportsScull: true,
+          isCoxed: true,
+        },
+      },
       squad: { select: { id: true, name: true } },
     },
     orderBy: [{ date: "asc" }, { startSlot: "asc" }],
@@ -45,7 +54,12 @@ export async function GET() {
   return NextResponse.json(
     bookings.map((b) => ({
       ...serializeBooking(b),
-      boat: b.boat,
+      boat: b.boat
+        ? {
+            name: b.boat.name,
+            boatTypeLabel: deriveBoatTypeLabel(b.boat),
+          }
+        : null,
     }))
   );
 }

@@ -28,7 +28,7 @@ type Booking = {
   isRaceSpecific: boolean;
   notes: string | null;
   squad: SquadSummary | null;
-  boat?: { name: string; boatType: string } | null;
+  boat?: { name: string; boatTypeLabel: string } | null;
 };
 
 export default function MyBookingsPage() {
@@ -91,7 +91,7 @@ export default function MyBookingsPage() {
                   {booking.boat?.name ?? booking.resourceType}
                   {booking.boat && (
                     <Badge variant="outline" className="ml-2">
-                      {booking.boat.boatType}
+                      {booking.boat.boatTypeLabel}
                     </Badge>
                   )}
                   {booking.isRaceSpecific && (

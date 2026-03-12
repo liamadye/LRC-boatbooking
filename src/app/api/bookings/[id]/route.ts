@@ -161,7 +161,11 @@ export async function PATCH(
       }
 
       const validationErrors = validateBooking({
-        boatType: boat.boatType,
+        boatClass: boat.boatClass,
+        boatSupportsSweep: boat.supportsSweep,
+        boatSupportsScull: boat.supportsScull,
+        boatIsCoxed: boat.isCoxed,
+        boatTypeLabel: boat.boatType,
         boatClassification: boat.classification as "black" | "green",
         boatCategory: boat.category as "club" | "private" | "syndicate" | "tinny",
         boatStatus: boat.status as "available" | "not_in_use",

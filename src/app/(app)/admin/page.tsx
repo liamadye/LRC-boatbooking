@@ -4,6 +4,7 @@ import { AdminTabs } from "@/components/admin/admin-tabs";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { invitationInclude, serializeInvitation } from "@/lib/admin-invitations";
+import { serializeBoat } from "@/lib/boat-serialization";
 import { getCachedBoats } from "@/lib/reference-data";
 import { serializeSignupRequest, signupRequestInclude } from "@/lib/signup-requests";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -71,11 +72,7 @@ export default async function AdminPage() {
     <div className="space-y-4">
       <h1 className="text-xl font-bold">Admin Panel</h1>
       <AdminTabs
-        boats={boats.map((b) => ({
-          ...b,
-          avgWeightKg: b.avgWeightKg ? Number(b.avgWeightKg) : null,
-          privateBoatAccessUserIds: b.privateBoatAccess.map((a) => a.userId),
-        }))}
+        boats={boats.map(serializeBoat)}
         squads={squads}
         users={users.map((u) => ({
           ...u,

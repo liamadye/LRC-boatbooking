@@ -195,7 +195,11 @@ export async function POST(request: NextRequest) {
 
   // Run validation
   const validationErrors = validateBooking({
-    boatType: boat?.boatType,
+    boatClass: boat?.boatClass,
+    boatSupportsSweep: boat?.supportsSweep,
+    boatSupportsScull: boat?.supportsScull,
+    boatIsCoxed: boat?.isCoxed,
+    boatTypeLabel: boat?.boatType,
     boatClassification: boat?.classification as "black" | "green" | undefined,
     boatCategory: boat?.category as "club" | "private" | "syndicate" | "tinny" | undefined,
     boatStatus: boat?.status as "available" | "not_in_use" | undefined,

@@ -1,20 +1,3 @@
-/** Max crew for each boat type (rowers + cox if applicable) */
-export const MAX_CREW: Record<string, number> = {
-  "1x": 1,
-  "2x": 2,
-  "2-": 2,
-  "2+": 3, // 2 rowers + cox
-  "2-/x": 2,
-  "4x": 4,
-  "4-": 4,
-  "4+": 5, // 4 rowers + cox
-  "4x/4-": 4,
-  "4x/4-/4+": 5,
-  "4x+/4+": 5,
-  "8+": 9, // 8 rowers + cox
-  tinny: 1, // coach boat
-};
-
 /** 30-minute increment times for the 8am–4:30pm daytime slot */
 export const DAYTIME_TIMES = [
   "8:00am", "8:30am", "9:00am", "9:30am", "10:00am", "10:30am",
@@ -51,26 +34,18 @@ export const TIME_SLOTS = [
  */
 export const MEMBER_TIME_RESTRICTIONS = {
   senior_competitive: {
-    weekday: { earliestSlot: 1, latestReturnSlot: 5 }, // 5am - 7am
-    weekend: { earliestSlot: 3, latestReturnSlot: 6 }, // 6am - 8am
+    weekday: { earliestSlot: 1, latestReturnSlot: 5 },
+    weekend: { earliestSlot: 3, latestReturnSlot: 6 },
   },
   student: {
     weekday: { earliestSlot: 1, latestReturnSlot: 5 },
     weekend: { earliestSlot: 3, latestReturnSlot: 6 },
   },
   recreational: {
-    weekday: { earliestSlot: 2, latestReturnSlot: 6 }, // after 5:45am - 7:30am (green only)
-    weekend: { earliestSlot: 1, latestReturnSlot: 6 }, // no early restriction on weekends
+    weekday: { earliestSlot: 2, latestReturnSlot: 6 },
+    weekend: { earliestSlot: 1, latestReturnSlot: 6 },
   },
 } as const;
-
-/** Section display configuration matching XLS layout */
-export const BOAT_SECTIONS: { label: string; types: string[]; color: string }[] = [
-  { label: "Eights (8+)", types: ["8+"], color: "bg-gray-100" },
-  { label: "Fours (4x/4-/4+)", types: ["4x/4-/4+", "4x/4-", "4x+/4+"], color: "bg-gray-100" },
-  { label: "Pairs & Doubles (2-/x)", types: ["2-/x", "2x", "2-/x LWT"], color: "bg-gray-100" },
-  { label: "Singles (1x)", types: ["1x"], color: "bg-gray-50" },
-];
 
 /** Color coding for UI sections */
 export const SECTION_COLORS = {

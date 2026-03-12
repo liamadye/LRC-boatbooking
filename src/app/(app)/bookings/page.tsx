@@ -4,6 +4,7 @@ import { getAuthenticatedUser } from "@/lib/auth";
 import { startOfWeek, addDays, format, parseISO } from "date-fns";
 import { BookingsClient } from "@/components/bookings-client";
 import { buildBookingWeekPayload } from "@/lib/booking-utils";
+import { serializeBoat } from "@/lib/boat-serialization";
 import { getCachedBoats, getCachedEquipment, getCachedOarSets } from "@/lib/reference-data";
 import { getSydneyDateString } from "@/lib/sydney-time";
 
@@ -59,10 +60,7 @@ export default async function BookingsPage({
   });
 
   // Serialize data for client components
-  const serializedBoats = visibleBoats.map((b) => ({
-    ...b,
-    avgWeightKg: b.avgWeightKg ? Number(b.avgWeightKg) : null,
-  }));
+  const serializedBoats = visibleBoats.map(serializeBoat);
 
   // Admins can book on behalf of any squad
   const isAdmin = userProfile.role === "admin";

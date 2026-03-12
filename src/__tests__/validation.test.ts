@@ -16,7 +16,11 @@ describe("validateBooking", () => {
   it("returns no errors for a valid booking", () => {
     const errors = validateBooking({
       ...baseInput,
-      boatType: "1x",
+      boatClass: "single",
+      boatSupportsScull: true,
+      boatSupportsSweep: false,
+      boatIsCoxed: false,
+      boatTypeLabel: "1x",
       boatClassification: "green",
       boatCategory: "club",
       boatStatus: "available",
@@ -40,7 +44,7 @@ describe("validateBooking", () => {
       boatClassification: "black",
       boatStatus: "available",
     });
-    expect(errors.some((e) => e.message.includes("Black"))).toBe(true);
+    expect(errors.some((entry) => entry.message.includes("Black"))).toBe(true);
   });
 
   it("allows black boats for eligible users", () => {
@@ -50,17 +54,17 @@ describe("validateBooking", () => {
       boatStatus: "available",
       userHasBlackBoatEligibility: true,
     });
-    expect(errors.some((e) => e.message.includes("Black"))).toBe(false);
+    expect(errors.some((entry) => entry.message.includes("Black"))).toBe(false);
   });
 
-  it("allows black boats for admin/captain roles", () => {
+  it("allows black boats for admin roles", () => {
     const errors = validateBooking({
       ...baseInput,
       boatClassification: "black",
       boatStatus: "available",
       userRole: "admin",
     });
-    expect(errors.some((e) => e.message.includes("Black"))).toBe(false);
+    expect(errors.some((entry) => entry.message.includes("Black"))).toBe(false);
   });
 
   it("rejects private boats for non-owners", () => {
@@ -70,7 +74,7 @@ describe("validateBooking", () => {
       boatOwnerUserId: "other-user",
       boatStatus: "available",
     });
-    expect(errors.some((e) => e.message.includes("Private"))).toBe(true);
+    expect(errors.some((entry) => entry.message.includes("Private"))).toBe(true);
   });
 
   it("allows private boats for owners", () => {
@@ -80,27 +84,35 @@ describe("validateBooking", () => {
       boatOwnerUserId: "user1",
       boatStatus: "available",
     });
-    expect(errors.some((e) => e.message.includes("Private"))).toBe(false);
+    expect(errors.some((entry) => entry.message.includes("Private"))).toBe(false);
   });
 
   it("rejects crew count exceeding max", () => {
     const errors = validateBooking({
       ...baseInput,
-      boatType: "1x",
+      boatClass: "single",
+      boatSupportsScull: true,
+      boatSupportsSweep: false,
+      boatIsCoxed: false,
+      boatTypeLabel: "1x",
       crewCount: 5,
       boatStatus: "available",
     });
-    expect(errors.some((e) => e.field === "crewCount")).toBe(true);
+    expect(errors.some((entry) => entry.field === "crewCount")).toBe(true);
   });
 
   it("rejects crew count less than 1", () => {
     const errors = validateBooking({
       ...baseInput,
-      boatType: "1x",
+      boatClass: "single",
+      boatSupportsScull: true,
+      boatSupportsSweep: false,
+      boatIsCoxed: false,
+      boatTypeLabel: "1x",
       crewCount: 0,
       boatStatus: "available",
     });
-    expect(errors.some((e) => e.field === "crewCount")).toBe(true);
+    expect(errors.some((entry) => entry.field === "crewCount")).toBe(true);
   });
 
   it("rejects end slot before start slot", () => {
@@ -109,7 +121,7 @@ describe("validateBooking", () => {
       startSlot: 5,
       endSlot: 3,
     });
-    expect(errors.some((e) => e.field === "timeSlot")).toBe(true);
+    expect(errors.some((entry) => entry.field === "timeSlot")).toBe(true);
   });
 
   it("rejects slots out of range", () => {
@@ -118,7 +130,7 @@ describe("validateBooking", () => {
       startSlot: 0,
       endSlot: 10,
     });
-    expect(errors.some((e) => e.message.includes("between 1 and 9"))).toBe(true);
+    expect(errors.some((entry) => entry.message.includes("between 1 and 9"))).toBe(true);
   });
 
   it("rejects erg booking across multiple slots", () => {
@@ -128,7 +140,7 @@ describe("validateBooking", () => {
       startSlot: 1,
       endSlot: 3,
     });
-    expect(errors.some((e) => e.message.includes("Ergs"))).toBe(true);
+    expect(errors.some((entry) => entry.message.includes("Ergs"))).toBe(true);
   });
 
   it("allows erg booking for single slot", () => {
@@ -138,39 +150,55 @@ describe("validateBooking", () => {
       startSlot: 1,
       endSlot: 1,
     });
-    expect(errors.some((e) => e.message.includes("Ergs"))).toBe(false);
+    expect(errors.some((entry) => entry.message.includes("Ergs"))).toBe(false);
   });
-
 });
 
 describe("isWeekend", () => {
   it("returns true for Saturday", () => {
-    expect(isWeekend(new Date("2026-03-07"))).toBe(true); // Saturday
+    expect(isWeekend(new Date("2026-03-07"))).toBe(true);
   });
 
   it("returns true for Sunday", () => {
-    expect(isWeekend(new Date("2026-03-08"))).toBe(true); // Sunday
+    expect(isWeekend(new Date("2026-03-08"))).toBe(true);
   });
 
   it("returns false for weekday", () => {
-    expect(isWeekend(new Date("2026-03-09"))).toBe(false); // Monday
+    expect(isWeekend(new Date("2026-03-09"))).toBe(false);
   });
 });
 
 describe("getMaxCrew", () => {
-  it("returns correct crew for 8+", () => {
-    expect(getMaxCrew("8+")).toBe(9);
+  it("returns correct crew for eights", () => {
+    expect(
+      getMaxCrew({
+        boatClass: "eight",
+        supportsSweep: true,
+        supportsScull: false,
+        isCoxed: true,
+      })
+    ).toBe(9);
   });
 
-  it("returns correct crew for 1x", () => {
-    expect(getMaxCrew("1x")).toBe(1);
+  it("returns correct crew for singles", () => {
+    expect(
+      getMaxCrew({
+        boatClass: "single",
+        supportsSweep: false,
+        supportsScull: true,
+        isCoxed: false,
+      })
+    ).toBe(1);
   });
 
-  it("returns correct crew for 4+", () => {
-    expect(getMaxCrew("4+")).toBe(5);
-  });
-
-  it("defaults to 1 for unknown type", () => {
-    expect(getMaxCrew("unknown")).toBe(1);
+  it("returns correct crew for coxed fours", () => {
+    expect(
+      getMaxCrew({
+        boatClass: "four",
+        supportsSweep: true,
+        supportsScull: true,
+        isCoxed: true,
+      })
+    ).toBe(5);
   });
 });

@@ -6,6 +6,7 @@
  */
 
 import { PrismaClient } from "@prisma/client";
+import { deriveBoatSpecFromLegacyType, deriveBoatTypeLabel } from "../src/lib/boats";
 
 const prisma = new PrismaClient();
 
@@ -127,13 +128,18 @@ async function main() {
 
   for (let i = 0; i < clubBoats.length; i++) {
     const b = clubBoats[i];
+    const spec = deriveBoatSpecFromLegacyType(b.boatType, "club");
     await prisma.boat.upsert({
       where: { id: `club-boat-${i}` },
       update: {},
       create: {
         id: `club-boat-${i}`,
         name: b.name,
-        boatType: b.boatType,
+        boatType: deriveBoatTypeLabel(spec),
+        boatClass: spec.boatClass,
+        supportsSweep: spec.supportsSweep,
+        supportsScull: spec.supportsScull,
+        isCoxed: spec.isCoxed,
         category: "club",
         classification: b.classification,
         avgWeightKg: b.avgWeightKg,
@@ -159,13 +165,18 @@ async function main() {
   ];
 
   for (let i = 0; i < privateBoatOwners.length; i++) {
+    const spec = deriveBoatSpecFromLegacyType("1x", "private");
     await prisma.boat.upsert({
       where: { id: `private-boat-${i}` },
       update: {},
       create: {
         id: `private-boat-${i}`,
         name: privateBoatOwners[i],
-        boatType: "1x",
+        boatType: deriveBoatTypeLabel(spec),
+        boatClass: spec.boatClass,
+        supportsSweep: spec.supportsSweep,
+        supportsScull: spec.supportsScull,
+        isCoxed: spec.isCoxed,
         category: "private",
         classification: "green",
         displayOrder: 100 + i,
@@ -184,13 +195,18 @@ async function main() {
   ];
 
   for (let i = 0; i < privateSculls.length; i++) {
+    const spec = deriveBoatSpecFromLegacyType(privateSculls[i].type, "private");
     await prisma.boat.upsert({
       where: { id: `private-scull-${i}` },
       update: {},
       create: {
         id: `private-scull-${i}`,
         name: privateSculls[i].name,
-        boatType: privateSculls[i].type,
+        boatType: deriveBoatTypeLabel(spec),
+        boatClass: spec.boatClass,
+        supportsSweep: spec.supportsSweep,
+        supportsScull: spec.supportsScull,
+        isCoxed: spec.isCoxed,
         category: "private",
         classification: "green",
         displayOrder: 130 + i,
@@ -210,13 +226,18 @@ async function main() {
   ];
 
   for (let i = 0; i < tinnies.length; i++) {
+    const spec = deriveBoatSpecFromLegacyType("tinny", "tinny");
     await prisma.boat.upsert({
       where: { id: `tinny-${i}` },
       update: {},
       create: {
         id: `tinny-${i}`,
         name: tinnies[i].name,
-        boatType: "tinny",
+        boatType: deriveBoatTypeLabel(spec),
+        boatClass: spec.boatClass,
+        supportsSweep: spec.supportsSweep,
+        supportsScull: spec.supportsScull,
+        isCoxed: spec.isCoxed,
         category: "tinny",
         classification: "green",
         displayOrder: 200 + i,

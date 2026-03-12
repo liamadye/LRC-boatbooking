@@ -6,7 +6,11 @@ import type { BoatWithRelations, SerializedBooking, UserProfile } from "@/lib/ty
 const boat: BoatWithRelations = {
   id: "boat-1",
   name: "Dean Patterson",
-  boatType: "8+",
+  boatClass: "eight",
+  supportsSweep: true,
+  supportsScull: false,
+  isCoxed: true,
+  boatTypeLabel: "8+",
   category: "club",
   classification: "green",
   status: "available",

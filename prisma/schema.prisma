@@ -41,6 +41,14 @@ enum BoatCategory {
   tinny
 }
 
+enum BoatClass {
+  eight
+  four
+  pair
+  single
+  tinny
+}
+
 enum EquipmentType {
   erg
   bike
@@ -120,7 +128,11 @@ model UserSquad {
 model Boat {
   id                 String             @id @default(uuid())
   name               String
-  boatType           String             @map("boat_type") // e.g. "8+", "4x/4-", "1x"
+  boatType           String             @map("boat_type") // Derived display label, e.g. "8+", "4x/-", "1x"
+  boatClass          BoatClass          @map("boat_class")
+  supportsSweep      Boolean            @default(false) @map("supports_sweep")
+  supportsScull      Boolean            @default(false) @map("supports_scull")
+  isCoxed            Boolean            @default(false) @map("is_coxed")
   category           BoatCategory       @default(club)
   classification     BoatClassification @default(green)
   status             BoatStatus         @default(available)

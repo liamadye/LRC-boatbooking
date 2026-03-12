@@ -1,4 +1,5 @@
-import { MAX_CREW, MEMBER_TIME_RESTRICTIONS } from "./constants";
+import { MEMBER_TIME_RESTRICTIONS } from "./constants";
+import { deriveBoatTypeLabel, getMaxCrewForBoat, type BoatClass } from "./boats";
 
 export type ValidationError = {
   field: string;
@@ -6,7 +7,11 @@ export type ValidationError = {
 };
 
 type BookingInput = {
-  boatType?: string;
+  boatClass?: BoatClass;
+  boatSupportsSweep?: boolean;
+  boatSupportsScull?: boolean;
+  boatIsCoxed?: boolean;
+  boatTypeLabel?: string;
   boatClassification?: "black" | "green";
   boatCategory?: "club" | "private" | "syndicate" | "tinny";
   boatStatus?: "available" | "not_in_use";
@@ -39,16 +44,14 @@ export function validateBooking(input: BookingInput): ValidationError[] {
     input.userRole === "vice_captain";
   const enforceMemberTypeRules = false;
 
-  // 1. Boat status check — "Not In Use" boats cannot be booked
   if (input.boatStatus === "not_in_use") {
     errors.push({
       field: "boat",
       message: "This boat is marked as Not In Use and cannot be booked.",
     });
-    return errors; // No point checking further
+    return errors;
   }
 
-  // 2. Classification check — Black boats require eligibility unless user has elevated role
   if (
     input.boatClassification === "black" &&
     !input.userHasBlackBoatEligibility &&
@@ -61,7 +64,6 @@ export function validateBooking(input: BookingInput): ValidationError[] {
     });
   }
 
-  // 3. Private boat check — must be owner or have explicit access
   if (input.boatCategory === "private" || input.boatCategory === "syndicate") {
     const isOwner = input.boatOwnerUserId === input.userId;
     const hasAccess = input.privateBoatAccessUserIds?.includes(input.userId) ?? false;
@@ -74,13 +76,25 @@ export function validateBooking(input: BookingInput): ValidationError[] {
     }
   }
 
-  // 4. Crew count check
-  if (input.boatType) {
-    const maxCrew = MAX_CREW[input.boatType];
-    if (maxCrew && input.crewCount > maxCrew) {
+  if (input.boatClass) {
+    const maxCrew = getMaxCrewForBoat({
+      boatClass: input.boatClass,
+      supportsSweep: input.boatSupportsSweep ?? false,
+      supportsScull: input.boatSupportsScull ?? false,
+      isCoxed: input.boatIsCoxed ?? false,
+    });
+    if (input.crewCount > maxCrew) {
+      const boatTypeLabel =
+        input.boatTypeLabel ??
+        deriveBoatTypeLabel({
+          boatClass: input.boatClass,
+          supportsSweep: input.boatSupportsSweep ?? false,
+          supportsScull: input.boatSupportsScull ?? false,
+          isCoxed: input.boatIsCoxed ?? false,
+        });
       errors.push({
         field: "crewCount",
-        message: `Maximum crew for a ${input.boatType} is ${maxCrew}. You entered ${input.crewCount}.`,
+        message: `Maximum crew for a ${boatTypeLabel} is ${maxCrew}. You entered ${input.crewCount}.`,
       });
     }
     if (input.crewCount < 1) {
@@ -91,16 +105,9 @@ export function validateBooking(input: BookingInput): ValidationError[] {
     }
   }
 
-  // 5. Weight check — disabled per club feedback
-  // Weight validation is informational only; not enforced at booking time.
-
-  // 6. Member type time restrictions (temporarily disabled)
   if (enforceMemberTypeRules && input.userMemberType && input.startSlot) {
-    const restrictions =
-      MEMBER_TIME_RESTRICTIONS[input.userMemberType];
-    const timeRule = input.isWeekend
-      ? restrictions.weekend
-      : restrictions.weekday;
+    const restrictions = MEMBER_TIME_RESTRICTIONS[input.userMemberType];
+    const timeRule = input.isWeekend ? restrictions.weekend : restrictions.weekday;
 
     if (input.startSlot < timeRule.earliestSlot) {
       errors.push({
@@ -110,7 +117,6 @@ export function validateBooking(input: BookingInput): ValidationError[] {
     }
   }
 
-  // 7. Slot range validation
   if (input.startSlot > input.endSlot) {
     errors.push({
       field: "timeSlot",
@@ -125,7 +131,6 @@ export function validateBooking(input: BookingInput): ValidationError[] {
     });
   }
 
-  // 8. Erg single-slot restriction
   if (input.equipmentType === "erg" && input.startSlot !== input.endSlot) {
     errors.push({
       field: "timeSlot",
@@ -136,17 +141,16 @@ export function validateBooking(input: BookingInput): ValidationError[] {
   return errors;
 }
 
-/**
- * Check if a given date falls on a weekend (Saturday or Sunday).
- */
 export function isWeekend(date: Date): boolean {
   const day = date.getDay();
   return day === 0 || day === 6;
 }
 
-/**
- * Calculate the crew count limit for a boat type.
- */
-export function getMaxCrew(boatType: string): number {
-  return MAX_CREW[boatType] ?? 1;
+export function getMaxCrew(boat: {
+  boatClass: BoatClass;
+  supportsSweep: boolean;
+  supportsScull: boolean;
+  isCoxed: boolean;
+}): number {
+  return getMaxCrewForBoat(boat);
 }

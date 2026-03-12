@@ -6,8 +6,20 @@ import {
   getSuggestedDaytimeBookingRange,
 } from "@/lib/booking-times";
 import { cn } from "@/lib/utils";
-import { TIME_SLOTS, BOAT_SECTIONS } from "@/lib/constants";
+import { TIME_SLOTS } from "@/lib/constants";
 import { getBookingDisplayName } from "@/lib/booking-utils";
+import {
+  BOAT_CLASS_FILTER_OPTIONS,
+  CLASSIFICATION_FILTER_OPTIONS,
+  COXED_FILTER_OPTIONS,
+  matchesBoatClassFilter,
+  matchesClassificationFilter,
+  matchesCoxedFilter,
+  SHELL_SECTIONS,
+  type BoatClass,
+  type BoatClassFilter,
+  type CoxedFilter,
+} from "@/lib/boats";
 import { Circle, Lock, Filter, ChevronDown, ChevronRight, Ban, Loader2 } from "lucide-react";
 import type {
   BoatWithRelations,
@@ -20,23 +32,9 @@ import type {
 type TabType = "shells" | "tinnies" | "oars" | "gym";
 
 type MobileFilters = {
-  boatType: "all" | "8+" | "4s" | "2s" | "1x";
+  boatClass: BoatClassFilter;
   classification: "all" | "black" | "green";
-};
-
-const BOAT_TYPE_FILTERS = [
-  { value: "all", label: "All" },
-  { value: "8+", label: "8+" },
-  { value: "4s", label: "4s" },
-  { value: "2s", label: "2s" },
-  { value: "1x", label: "1x" },
-] as const;
-
-const BOAT_TYPE_MATCH: Record<string, string[]> = {
-  "8+": ["8+"],
-  "4s": ["4x/4-/4+", "4x/4-", "4x+/4+", "4x", "4-", "4+"],
-  "2s": ["2-/x", "2x", "2-/x LWT", "2-", "2+"],
-  "1x": ["1x"],
+  coxed: CoxedFilter;
 };
 
 type Props = {
@@ -63,6 +61,21 @@ type Props = {
 
 const SECTION_HEADER_STICKY_TOP = 41;
 
+type ResourceRow = {
+  id: string;
+  name: string;
+  resourceType: "boat" | "equipment" | "oar_set";
+  boatTypeLabel?: string;
+  boatClass?: BoatClass;
+  classification?: "black" | "green";
+  category?: BoatWithRelations["category"];
+  status?: BoatWithRelations["status"];
+  isOutside?: boolean;
+  isCoxed?: boolean;
+  subtitle?: string;
+  sectionLabel?: string;
+};
+
 export function MobileBookingView({
   tab,
   boats,
@@ -75,122 +88,134 @@ export function MobileBookingView({
   onBoatInfoClick,
 }: Props) {
   const [filters, setFilters] = useState<MobileFilters>({
-    boatType: "all",
+    boatClass: "all",
     classification: "all",
+    coxed: "all",
   });
   const [showFilters, setShowFilters] = useState(false);
 
   const showFilterBar = tab === "shells";
 
-  const activeFilterCount = showFilterBar ? [
-    filters.boatType !== "all",
-    filters.classification !== "all",
-  ].filter(Boolean).length : 0;
-
-  // Build resource rows based on tab
-  type ResourceRow = {
-    id: string;
-    name: string;
-    resourceType: "boat" | "equipment" | "oar_set";
-    boatType?: string;
-    classification?: string;
-    category?: string;
-    status?: string;
-    isOutside?: boolean;
-    subtitle?: string;
-    sectionLabel?: string;
-  };
+  const activeFilterCount = showFilterBar
+    ? [
+        filters.boatClass !== "all",
+        filters.classification !== "all",
+        filters.coxed !== "all",
+      ].filter(Boolean).length
+    : 0;
 
   const resourceRows = useMemo((): ResourceRow[] => {
     if (tab === "shells") {
-      // Group by section like desktop
       const rows: ResourceRow[] = [];
-      const clubBoats = boats.filter((b) => b.category === "club");
-      for (const section of BOAT_SECTIONS) {
-        const sectionBoats = clubBoats.filter((b) => section.types.includes(b.boatType));
-        rows.push(...sectionBoats.map((b) => ({
-          id: b.id,
-          name: b.name,
-          resourceType: "boat" as const,
-          boatType: b.boatType,
-          classification: b.classification,
-          category: b.category,
-          status: b.status,
-          isOutside: b.isOutside,
-          sectionLabel: section.label,
-        })));
+      const clubBoats = boats.filter((boat) => boat.category === "club");
+
+      for (const section of SHELL_SECTIONS) {
+        const sectionBoats = clubBoats.filter((boat) => boat.boatClass === section.key);
+        rows.push(
+          ...sectionBoats.map((boat) => ({
+            id: boat.id,
+            name: boat.name,
+            resourceType: "boat" as const,
+            boatTypeLabel: boat.boatTypeLabel,
+            boatClass: boat.boatClass,
+            classification: boat.classification,
+            category: boat.category,
+            status: boat.status,
+            isOutside: boat.isOutside,
+            isCoxed: boat.isCoxed,
+            sectionLabel: section.label,
+          }))
+        );
       }
+
       const privateBoats = boats.filter(
-        (b) => b.category === "private" || b.category === "syndicate"
+        (boat) => boat.category === "private" || boat.category === "syndicate"
       );
-      rows.push(...privateBoats.map((b) => ({
-        id: b.id,
-        name: b.name,
-        resourceType: "boat" as const,
-        boatType: b.boatType,
-        classification: b.classification,
-        category: b.category,
-        status: b.status,
-        isOutside: b.isOutside,
-        sectionLabel: "Private & Syndicate Boats",
-      })));
+      rows.push(
+        ...privateBoats.map((boat) => ({
+          id: boat.id,
+          name: boat.name,
+          resourceType: "boat" as const,
+          boatTypeLabel: boat.boatTypeLabel,
+          boatClass: boat.boatClass,
+          classification: boat.classification,
+          category: boat.category,
+          status: boat.status,
+          isOutside: boat.isOutside,
+          isCoxed: boat.isCoxed,
+          sectionLabel: "Private & Syndicate Boats",
+        }))
+      );
       return rows;
     }
+
     if (tab === "tinnies") {
-      return boats.map((b) => ({
-        id: b.id,
-        name: b.name,
+      return boats.map((boat) => ({
+        id: boat.id,
+        name: boat.name,
         resourceType: "boat" as const,
-        boatType: b.boatType,
-        category: b.category,
-        status: b.status,
+        boatTypeLabel: boat.boatTypeLabel,
+        boatClass: boat.boatClass,
+        category: boat.category,
+        status: boat.status,
+        isCoxed: boat.isCoxed,
       }));
     }
+
     if (tab === "oars") {
-      return oarSets.map((os) => ({
-        id: os.id,
-        name: os.name,
+      return oarSets.map((oarSet) => ({
+        id: oarSet.id,
+        name: oarSet.name,
         resourceType: "oar_set" as const,
       }));
     }
-    // gym
-    const ergs = equipment.filter((e) => e.type === "erg").map((e) => ({
-      id: e.id,
-      name: `Erg ${e.number}`,
+
+    const ergs = equipment.filter((entry) => entry.type === "erg").map((entry) => ({
+      id: entry.id,
+      name: `Erg ${entry.number}`,
       resourceType: "equipment" as const,
       subtitle: "ONE SLOT ONLY",
     }));
-    const bikes = equipment.filter((e) => e.type === "bike").map((e) => ({
-      id: e.id,
-      name: `Bike ${e.number}`,
+    const bikes = equipment.filter((entry) => entry.type === "bike").map((entry) => ({
+      id: entry.id,
+      name: `Bike ${entry.number}`,
       resourceType: "equipment" as const,
     }));
-    const gyms = equipment.filter((e) => e.type === "gym").map((e) => ({
-      id: e.id,
-      name: `Gym ${e.number}`,
+    const gyms = equipment.filter((entry) => entry.type === "gym").map((entry) => ({
+      id: entry.id,
+      name: `Gym ${entry.number}`,
       resourceType: "equipment" as const,
     }));
+
     return [...ergs, ...bikes, ...gyms];
   }, [tab, boats, equipment, oarSets]);
 
-  // Apply filters (shells tab only)
   const filteredRows = useMemo(() => {
-    if (!showFilterBar) return resourceRows;
+    if (!showFilterBar) {
+      return resourceRows;
+    }
+
     return resourceRows.filter((row) => {
-      if (filters.boatType !== "all") {
-        const types = BOAT_TYPE_MATCH[filters.boatType] ?? [];
-        if (!row.boatType || !types.includes(row.boatType)) return false;
+      if (!row.boatClass || !row.classification) {
+        return false;
       }
-      if (filters.classification !== "all") {
-        if (row.classification !== filters.classification) return false;
-      }
-      return true;
+
+      return (
+        matchesBoatClassFilter({ boatClass: row.boatClass, supportsSweep: false, supportsScull: false, isCoxed: row.isCoxed ?? false }, filters.boatClass) &&
+        matchesClassificationFilter(
+          { boatClass: row.boatClass, supportsSweep: false, supportsScull: false, isCoxed: row.isCoxed ?? false, classification: row.classification },
+          filters.classification
+        ) &&
+        matchesCoxedFilter(
+          { boatClass: row.boatClass, supportsSweep: false, supportsScull: false, isCoxed: row.isCoxed ?? false },
+          filters.coxed
+        )
+      );
     });
-  }, [resourceRows, filters, showFilterBar]);
+  }, [filters, resourceRows, showFilterBar]);
 
   return (
     <div className="space-y-4 md:hidden">
-      {/* Filter bar (shells tab only) */}
       {showFilterBar && (
         <>
           <button
@@ -220,19 +245,24 @@ export function MobileBookingView({
                 <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
                   Boat Type
                 </label>
-                <div className="flex gap-1.5 mt-1">
-                  {BOAT_TYPE_FILTERS.map((f) => (
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {BOAT_CLASS_FILTER_OPTIONS.map((option) => (
                     <button
-                      key={f.value}
-                      onClick={() => setFilters((prev) => ({ ...prev, boatType: f.value as MobileFilters["boatType"] }))}
+                      key={option.value}
+                      onClick={() =>
+                        setFilters((previous) => ({
+                          ...previous,
+                          boatClass: option.value,
+                        }))
+                      }
                       className={cn(
                         "px-3 py-2 rounded-full text-sm font-medium border transition-colors min-h-[44px]",
-                        filters.boatType === f.value
+                        filters.boatClass === option.value
                           ? "bg-blue-600 text-white border-blue-600"
                           : "bg-white text-gray-600 border-gray-200"
                       )}
                     >
-                      {f.label}
+                      {option.label}
                     </button>
                   ))}
                 </div>
@@ -245,23 +275,47 @@ export function MobileBookingView({
                 <select
                   className="mt-1 w-full text-base border rounded px-2 py-2 min-h-[44px]"
                   value={filters.classification}
-                  onChange={(e) =>
-                    setFilters((prev) => ({
-                      ...prev,
-                      classification: e.target.value as MobileFilters["classification"],
+                  onChange={(event) =>
+                    setFilters((previous) => ({
+                      ...previous,
+                      classification: event.target.value as MobileFilters["classification"],
                     }))
                   }
                 >
-                  <option value="all">All boats</option>
-                  <option value="green">Green (open)</option>
-                  <option value="black">Black (restricted)</option>
+                  {CLASSIFICATION_FILTER_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  Coxed
+                </label>
+                <select
+                  className="mt-1 w-full text-base border rounded px-2 py-2 min-h-[44px]"
+                  value={filters.coxed}
+                  onChange={(event) =>
+                    setFilters((previous) => ({
+                      ...previous,
+                      coxed: event.target.value as MobileFilters["coxed"],
+                    }))
+                  }
+                >
+                  {COXED_FILTER_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </div>
 
               {activeFilterCount > 0 && (
                 <button
                   onClick={() =>
-                    setFilters({ boatType: "all", classification: "all" })
+                    setFilters({ boatClass: "all", classification: "all", coxed: "all" })
                   }
                   className="text-xs text-blue-600 underline"
                 >
@@ -273,21 +327,20 @@ export function MobileBookingView({
         </>
       )}
 
-      {/* Horizontal scroll grid — same layout as desktop */}
       <div className="overflow-auto rounded-lg border bg-white max-h-[calc(100dvh-320px)]">
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-20">
             <tr className="border-b bg-gray-50">
-              <th scope="col" className="sticky left-0 z-30 bg-gray-50 px-3 py-2 text-left font-medium min-w-[140px]">
+              <th scope="col" className="sticky left-0 z-30 bg-gray-50 px-3 py-2 text-left font-medium min-w-[220px] whitespace-nowrap">
                 {tab === "shells" ? "Boat" : tab === "tinnies" ? "Tinny" : tab === "oars" ? "Oar Set" : "Equipment"}
               </th>
-              {TIME_SLOTS.map((ts) => (
+              {TIME_SLOTS.map((slot) => (
                 <th
                   scope="col"
-                  key={ts.slot}
+                  key={slot.slot}
                   className="bg-gray-50 px-1.5 py-2 text-center font-medium min-w-[90px] text-xs"
                 >
-                  {ts.label}
+                  {slot.label}
                 </th>
               ))}
             </tr>
@@ -306,7 +359,7 @@ export function MobileBookingView({
                   {showSectionHeader && (
                     <tr key={`${row.sectionLabel}-header`} className="border-t bg-gray-50">
                       <td
-                        className="sticky left-0 z-30 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+                        className="sticky left-0 z-30 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground whitespace-nowrap min-w-[220px]"
                         style={{ top: SECTION_HEADER_STICKY_TOP }}
                       >
                         {row.sectionLabel}
@@ -320,7 +373,7 @@ export function MobileBookingView({
                     </tr>
                   )}
                   <tr key={row.id} className={cn("border-t", isNotInUse && "opacity-50")}>
-                    <td className="sticky left-0 z-10 bg-white px-3 py-1.5 font-medium">
+                    <td className="sticky left-0 z-10 bg-white px-3 py-1.5 font-medium min-w-[220px] whitespace-nowrap">
                       <div className="flex items-center gap-1.5">
                         {isBlack && <Circle className="h-3 w-3 flex-shrink-0 fill-gray-800 text-gray-800" style={{ aspectRatio: "1/1" }} />}
                         {!isBlack && !isPrivate && tab === "shells" && <Circle className="h-3 w-3 flex-shrink-0 fill-green-500 text-green-500" style={{ aspectRatio: "1/1" }} />}
@@ -329,7 +382,7 @@ export function MobileBookingView({
                         {row.resourceType === "boat" ? (
                           <button
                             type="button"
-                            className="truncate max-w-[120px] text-left hover:underline"
+                            className="truncate max-w-[180px] text-left hover:underline"
                             onClick={() => {
                               const boat = boats.find((entry) => entry.id === row.id);
                               if (boat) {
@@ -340,19 +393,19 @@ export function MobileBookingView({
                             {row.name}
                           </button>
                         ) : (
-                          <span className="truncate max-w-[120px]">{row.name}</span>
+                          <span className="truncate max-w-[180px]">{row.name}</span>
                         )}
                         {row.subtitle && (
                           <span className="text-[9px] text-muted-foreground">{row.subtitle}</span>
                         )}
                       </div>
                     </td>
-                    {TIME_SLOTS.map((ts) => {
-                      const bookings = getBookings(row.id, ts.slot);
+                    {TIME_SLOTS.map((slot) => {
+                      const bookings = getBookings(row.id, slot.slot);
 
                       if (isNotInUse) {
                         return (
-                          <td key={ts.slot} className="px-1 py-1.5 text-center">
+                          <td key={slot.slot} className="px-1 py-1.5 text-center">
                             <div className="h-8 rounded bg-red-50 flex items-center justify-center">
                               <Ban className="h-3 w-3 text-red-300" />
                             </div>
@@ -360,11 +413,11 @@ export function MobileBookingView({
                         );
                       }
 
-                      if (ts.slot === 7) {
+                      if (slot.slot === 7) {
                         const suggestedDaytimeRange = getSuggestedDaytimeBookingRange(bookings);
                         const canAddBooking = !!suggestedDaytimeRange;
                         return (
-                          <td key={ts.slot} className="px-1 py-1.5 align-top">
+                          <td key={slot.slot} className="px-1 py-1.5 align-top">
                             <div className="space-y-1 min-w-[96px]">
                               {bookings.map((booking) => {
                                 const isOwn = booking.userId === user.id;
@@ -403,7 +456,7 @@ export function MobileBookingView({
                                     : "border-gray-100 bg-gray-50 text-gray-400 cursor-not-allowed"
                                 )}
                                 onClick={() =>
-                                  onSlotClick(row.resourceType, row.id, row.name, ts.slot, {
+                                  onSlotClick(row.resourceType, row.id, row.name, slot.slot, {
                                     initialEndSlot: 7,
                                     initialStartMinutes: suggestedDaytimeRange?.startMinutes,
                                     initialEndMinutes: suggestedDaytimeRange?.endMinutes,
@@ -424,25 +477,31 @@ export function MobileBookingView({
                         const isOwn = booking.userId === user.id;
                         const isPending = booking.clientStatus === "pending";
                         return (
-                          <td key={ts.slot} className="px-1 py-1.5 text-center">
+                          <td key={slot.slot} className="px-1 py-1.5 text-center">
                             <button
                               className={cn(
-                                "h-8 w-full rounded border flex items-center justify-center px-1 transition-colors",
+                                "h-8 w-full rounded border flex items-center justify-center px-1 cursor-pointer transition-colors",
                                 isPending
-                                  ? "cursor-wait border-dashed bg-amber-50 border-amber-300"
+                                  ? "cursor-wait border-dashed bg-amber-50 border-amber-300 hover:bg-amber-50"
                                   : isOwn
                                     ? "bg-blue-100 border-blue-300 hover:bg-blue-200"
                                     : "bg-gray-100 border-gray-200 hover:bg-gray-200",
                                 booking.isRaceSpecific && "ring-1 ring-amber-400"
                               )}
-                              onClick={() => !isPending && onBookingClick(booking)}
+                              onClick={() => onBookingClick(booking)}
                               disabled={isPending}
                             >
                               {isPending && <Loader2 className="mr-1 h-3 w-3 animate-spin text-amber-700" />}
-                              <span className={cn(
-                                "text-[10px] font-medium truncate",
-                                isPending ? "text-amber-800" : isOwn ? "text-blue-800" : "text-gray-700"
-                              )}>
+                              <span
+                                className={cn(
+                                  "text-xs font-medium truncate",
+                                  isPending
+                                    ? "text-amber-800"
+                                    : isOwn
+                                      ? "text-blue-800"
+                                      : "text-gray-700"
+                                )}
+                              >
                                 {getBookingDisplayName(booking)} ({booking.crewCount})
                               </span>
                             </button>
@@ -451,10 +510,11 @@ export function MobileBookingView({
                       }
 
                       return (
-                        <td key={ts.slot} className="px-1 py-1.5 text-center">
+                        <td key={slot.slot} className="px-1 py-1.5 text-center">
                           <button
                             className="h-8 w-full rounded border border-dashed border-gray-200 hover:border-blue-400 hover:bg-blue-50/50 transition-colors"
-                            onClick={() => onSlotClick(row.resourceType, row.id, row.name, ts.slot)}
+                            onClick={() => onSlotClick(row.resourceType, row.id, row.name, slot.slot)}
+                            title="Click to book"
                             aria-label="Book this slot"
                           />
                         </td>
@@ -464,13 +524,6 @@ export function MobileBookingView({
                 </Fragment>
               );
             })}
-            {filteredRows.length === 0 && (
-              <tr>
-                <td colSpan={1 + TIME_SLOTS.length} className="px-3 py-8 text-center text-sm text-muted-foreground">
-                  {showFilterBar && activeFilterCount > 0 ? "No boats match your filters" : "Nothing to show"}
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>

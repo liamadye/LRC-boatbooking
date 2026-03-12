@@ -1,5 +1,6 @@
 import { format, startOfWeek } from "date-fns";
 import type { BookingWeekPayload, BookingWeekSummary, SerializedBooking } from "@/lib/types";
+import { supportsSquadBooking as supportsSquadBookingForClass, type BoatClass } from "@/lib/boats";
 
 type BookingLike = {
   id: string;
@@ -29,8 +30,8 @@ type BookingWeekLike = {
   pymbleNotes: string | null;
 };
 
-export function supportsSquadBooking(boatType?: string | null) {
-  return !!boatType && (boatType.includes("4") || boatType.includes("8"));
+export function supportsSquadBooking(boatClass?: BoatClass | null) {
+  return supportsSquadBookingForClass(boatClass);
 }
 
 export function getWeekStartKey(date: Date) {

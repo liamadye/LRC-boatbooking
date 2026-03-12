@@ -9,8 +9,19 @@ import {
   getSuggestedDaytimeBookingRange,
 } from "@/lib/booking-times";
 import { getBookingDisplayName } from "@/lib/booking-utils";
+import {
+  BOAT_CLASS_FILTER_OPTIONS,
+  CLASSIFICATION_FILTER_OPTIONS,
+  COXED_FILTER_OPTIONS,
+  matchesBoatClassFilter,
+  matchesClassificationFilter,
+  matchesCoxedFilter,
+  SHELL_SECTIONS,
+  type BoatClassFilter,
+  type CoxedFilter,
+} from "@/lib/boats";
 import { cn } from "@/lib/utils";
-import { TIME_SLOTS, BOAT_SECTIONS, SECTION_COLORS } from "@/lib/constants";
+import { TIME_SLOTS, SECTION_COLORS } from "@/lib/constants";
 import { MobileBookingView } from "@/components/mobile-booking-view";
 import { ChevronDown, ChevronRight, Circle, Lock, Ban, RefreshCw, Loader2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -59,6 +70,15 @@ type BookingTarget = {
 };
 
 const SECTION_HEADER_STICKY_TOP = 41;
+const DEFAULT_SHELL_FILTERS: {
+  boatClass: BoatClassFilter;
+  classification: "all" | "black" | "green";
+  coxed: CoxedFilter;
+} = {
+  boatClass: "all",
+  classification: "all",
+  coxed: "all",
+};
 
 export function BookingGrid({
   tab,
@@ -82,6 +102,7 @@ export function BookingGrid({
   const [selectedBooking, setSelectedBooking] = useState<SerializedBooking | null>(null);
   const [editingBooking, setEditingBooking] = useState<SerializedBooking | null>(null);
   const [selectedBoat, setSelectedBoat] = useState<BoatWithRelations | null>(null);
+  const [desktopFilters, setDesktopFilters] = useState(DEFAULT_SHELL_FILTERS);
 
   useEffect(() => {
     setSelectedBooking((current) =>
@@ -112,10 +133,24 @@ export function BookingGrid({
   }, [oarSets]);
 
   // Memoize resource groupings
-  const clubBoats = useMemo(() => boats.filter((b) => b.category === "club"), [boats]);
+  const filteredShellBoats = useMemo(() => {
+    if (tab !== "shells") {
+      return boats;
+    }
+
+    return boats.filter((boat) =>
+      matchesBoatClassFilter(boat, desktopFilters.boatClass) &&
+      matchesClassificationFilter(boat, desktopFilters.classification) &&
+      matchesCoxedFilter(boat, desktopFilters.coxed)
+    );
+  }, [boats, desktopFilters, tab]);
+  const clubBoats = useMemo(
+    () => filteredShellBoats.filter((b) => b.category === "club"),
+    [filteredShellBoats]
+  );
   const privateBoats = useMemo(
-    () => boats.filter((b) => b.category === "private" || b.category === "syndicate"),
-    [boats]
+    () => filteredShellBoats.filter((b) => b.category === "private" || b.category === "syndicate"),
+    [filteredShellBoats]
   );
   const tinnies = useMemo(() => boats.filter((b) => b.category === "tinny"), [boats]);
   const ergs = useMemo(() => equipment.filter((e) => e.type === "erg"), [equipment]);
@@ -249,12 +284,85 @@ export function BookingGrid({
         onBoatInfoClick={(boat) => setSelectedBoat(boat)}
       />
 
+      {tab === "shells" && (
+        <div className="hidden md:flex md:flex-wrap md:items-end md:gap-3">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Boat Type</label>
+            <select
+              className="mt-1 block min-w-[120px] rounded-md border px-3 py-2 text-sm"
+              value={desktopFilters.boatClass}
+              onChange={(event) =>
+                setDesktopFilters((current) => ({
+                  ...current,
+                  boatClass: event.target.value as BoatClassFilter,
+                }))
+              }
+            >
+              {BOAT_CLASS_FILTER_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Classification</label>
+            <select
+              className="mt-1 block min-w-[140px] rounded-md border px-3 py-2 text-sm"
+              value={desktopFilters.classification}
+              onChange={(event) =>
+                setDesktopFilters((current) => ({
+                  ...current,
+                  classification: event.target.value as "all" | "black" | "green",
+                }))
+              }
+            >
+              {CLASSIFICATION_FILTER_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Coxed</label>
+            <select
+              className="mt-1 block min-w-[120px] rounded-md border px-3 py-2 text-sm"
+              value={desktopFilters.coxed}
+              onChange={(event) =>
+                setDesktopFilters((current) => ({
+                  ...current,
+                  coxed: event.target.value as CoxedFilter,
+                }))
+              }
+            >
+              {COXED_FILTER_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          {(desktopFilters.boatClass !== "all" ||
+            desktopFilters.classification !== "all" ||
+            desktopFilters.coxed !== "all") && (
+            <button
+              type="button"
+              className="text-sm text-blue-600 underline"
+              onClick={() => setDesktopFilters(DEFAULT_SHELL_FILTERS)}
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Desktop view */}
       <div className="overflow-auto rounded-lg border bg-white hidden md:block max-h-[calc(100dvh-260px)]">
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-20">
             <tr className="border-b bg-gray-50">
-              <th scope="col" className="sticky left-0 z-30 bg-gray-50 px-3 py-2 text-left font-medium w-48">
+              <th scope="col" className="sticky left-0 z-30 bg-gray-50 px-3 py-2 text-left font-medium min-w-[240px] whitespace-nowrap">
                 {tab === "shells" ? "Boat" : tab === "tinnies" ? "Tinny" : tab === "oars" ? "Oar Set" : "Equipment"}
               </th>
               {showBoatColumns && (
@@ -277,10 +385,8 @@ export function BookingGrid({
           </thead>
           <tbody>
             {/* Club Boats by section (shells tab) */}
-            {tab === "shells" && BOAT_SECTIONS.map((section) => {
-              const sectionBoats = clubBoats.filter((b) =>
-                section.types.includes(b.boatType)
-              );
+            {tab === "shells" && SHELL_SECTIONS.map((section) => {
+              const sectionBoats = clubBoats.filter((b) => b.boatClass === section.key);
               if (sectionBoats.length === 0) return null;
               const isCollapsed = collapsedSections.has(section.label);
 
@@ -489,7 +595,7 @@ const SectionHeader = memo(function SectionHeader({
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } }}
     >
       <td
-        className={cn("sticky left-0 z-30 px-3 py-2 font-semibold", colorClass)}
+        className={cn("sticky left-0 z-30 px-3 py-2 font-semibold whitespace-nowrap", colorClass)}
         style={{ top: SECTION_HEADER_STICKY_TOP }}
       >
         <div className="flex items-center gap-2">
@@ -549,7 +655,7 @@ const BoatRow = memo(function BoatRow({
 
   return (
     <tr className={cn("border-t hover:bg-gray-50/50", isNotInUse && "opacity-50")}>
-      <td className={cn("sticky left-0 z-10 px-3 py-1.5 font-medium", colorClass)}>
+      <td className={cn("sticky left-0 z-10 px-3 py-1.5 font-medium min-w-[240px] whitespace-nowrap", colorClass)}>
         <div className="flex items-center gap-1.5">
           {isBlack && (
             <span title="Black boat (restricted)"><Circle className="h-3 w-3 fill-gray-800 text-gray-800" aria-hidden="true" style={{ aspectRatio: "1/1" }} /><span className="sr-only">Black boat (restricted)</span></span>
@@ -561,7 +667,7 @@ const BoatRow = memo(function BoatRow({
           {isNotInUse && <span title="Not in use"><Ban className="h-3 w-3 text-red-500" aria-hidden="true" /><span className="sr-only">Not in use</span></span>}
           <button
             type="button"
-            className="truncate max-w-[160px] text-left hover:underline"
+            className="truncate max-w-[220px] text-left hover:underline"
             onClick={(event) => {
               event.stopPropagation();
               onBoatInfoClick(boat);
@@ -573,7 +679,7 @@ const BoatRow = memo(function BoatRow({
       </td>
       {showBoatColumns && (
         <>
-          <td className="px-2 py-1.5 text-muted-foreground">{boat.boatType}</td>
+          <td className="px-2 py-1.5 text-muted-foreground">{boat.boatTypeLabel}</td>
           <td className="px-2 py-1.5 text-muted-foreground">
             {boat.avgWeightKg ? `${boat.avgWeightKg}` : "—"}
           </td>
@@ -642,7 +748,7 @@ const ResourceRow = memo(function ResourceRow({
 }) {
   return (
     <tr className="border-t hover:bg-gray-50/50">
-      <td className={cn("sticky left-0 z-10 px-3 py-1.5 font-medium", colorClass)}>
+      <td className={cn("sticky left-0 z-10 px-3 py-1.5 font-medium min-w-[240px] whitespace-nowrap", colorClass)}>
         <div>
           {name}
           {subtitle && (

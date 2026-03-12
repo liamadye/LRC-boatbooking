@@ -22,7 +22,7 @@ type AdminBooking = {
   endMinutes: number;
   isRaceSpecific: boolean;
   notes: string | null;
-  boat: { name: string; boatType: string } | null;
+  boat: { name: string; boatTypeLabel: string } | null;
   equipment: { type: string; number: number } | null;
   oarSet: { name: string } | null;
   user: { fullName: string; email: string };
@@ -74,7 +74,7 @@ export function BookingManagement() {
   }
 
   function getResourceName(booking: AdminBooking) {
-    if (booking.boat) return `${booking.boat.name} (${booking.boat.boatType})`;
+    if (booking.boat) return `${booking.boat.name} (${booking.boat.boatTypeLabel})`;
     if (booking.equipment) return `${booking.equipment.type.charAt(0).toUpperCase() + booking.equipment.type.slice(1)} ${booking.equipment.number}`;
     if (booking.oarSet) return booking.oarSet.name;
     return "Unknown";

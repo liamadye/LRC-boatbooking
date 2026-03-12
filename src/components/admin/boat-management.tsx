@@ -25,39 +25,41 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import {
+  BOAT_CLASS_FILTER_OPTIONS,
+  BOAT_CLASS_OPTIONS,
+  CATEGORY_FILTER_OPTIONS,
+  CLASSIFICATION_FILTER_OPTIONS,
+  COXED_FILTER_OPTIONS,
+  deriveBoatTypeLabel,
+  getBoatCategoryLabel,
+  isPrivateLikeCategory,
+  matchesBoatClassFilter,
+  matchesClassificationFilter,
+  matchesCoxedFilter,
+  normalizeBoatSpec,
+  validateBoatSpec,
+  type BoatClass,
+  type BoatClassFilter,
+  type CategoryFilter,
+  type CoxedFilter,
+} from "@/lib/boats";
 import type { BoatWithRelations } from "@/lib/types";
 
 type Squad = { id: string; name: string };
 type AdminUser = { id: string; fullName: string; email: string };
 
 const EMPTY_USER_IDS: string[] = [];
-const PRIVATE_LIKE_CATEGORIES = new Set<BoatWithRelations["category"]>(["private", "syndicate"]);
-const CATEGORY_OPTIONS: BoatWithRelations["category"][] = ["club", "private", "syndicate", "tinny"];
-const CLASSIFICATION_OPTIONS: BoatWithRelations["classification"][] = ["green", "black"];
 const STATUS_OPTIONS: BoatWithRelations["status"][] = ["available", "not_in_use"];
 
-type BoatApiResponse = {
-  id: string;
-  name: string;
-  boatType: string;
-  category: BoatWithRelations["category"];
-  classification: BoatWithRelations["classification"];
-  status: BoatWithRelations["status"];
-  ownerUserId: string | null;
-  avgWeightKg: string | number | null;
-  responsibleSquadId: string | null;
-  responsibleSquad?: { id: string; name: string } | null;
-  responsiblePerson: string | null;
-  privateBoatAccess?: { userId: string }[];
-  privateBoatAccessUserIds?: string[];
-  displayOrder: number;
-  notes: string | null;
-  isOutside: boolean;
-};
+type BoatApiResponse = BoatWithRelations;
 
 type BoatFormState = {
   name: string;
-  boatType: string;
+  boatClass: BoatClass;
+  supportsSweep: boolean;
+  supportsScull: boolean;
+  isCoxed: boolean;
   category: BoatWithRelations["category"];
   classification: BoatWithRelations["classification"];
   status: BoatWithRelations["status"];
@@ -65,6 +67,13 @@ type BoatFormState = {
   ownerUserId: string;
   avgWeightKg: string;
   privateBoatAccessUserIds: string[];
+};
+
+type BoatFilters = {
+  boatClass: BoatClassFilter;
+  classification: "all" | BoatWithRelations["classification"];
+  category: CategoryFilter;
+  coxed: CoxedFilter;
 };
 
 function sortBoats(boats: BoatWithRelations[]) {
@@ -76,36 +85,33 @@ function sortBoats(boats: BoatWithRelations[]) {
   });
 }
 
-function normalizeBoat(
-  boat: BoatApiResponse | BoatWithRelations,
-  previous?: BoatWithRelations
-): BoatWithRelations {
-  const privateBoatAccessUserIds =
-    "privateBoatAccess" in boat && Array.isArray(boat.privateBoatAccess)
-      ? boat.privateBoatAccess.map((entry) => entry.userId)
-      : previous?.privateBoatAccessUserIds ?? boat.privateBoatAccessUserIds ?? EMPTY_USER_IDS;
-
+function normalizeBoat(boat: BoatApiResponse) {
   return {
-    ...(previous ?? {}),
     ...boat,
-    avgWeightKg:
-      boat.avgWeightKg === null || boat.avgWeightKg === undefined
-        ? null
-        : Number(boat.avgWeightKg),
-    privateBoatAccessUserIds,
-  };
+    privateBoatAccessUserIds: boat.privateBoatAccessUserIds ?? EMPTY_USER_IDS,
+  } satisfies BoatWithRelations;
 }
 
-function buildWeightDrafts(boats: BoatWithRelations[]) {
-  return Object.fromEntries(
-    boats.map((boat) => [boat.id, boat.avgWeightKg == null ? "" : String(boat.avgWeightKg)])
-  );
+function getSpecDefaults(boatClass: BoatClass) {
+  switch (boatClass) {
+    case "eight":
+      return { supportsSweep: true, supportsScull: false, isCoxed: true };
+    case "four":
+      return { supportsSweep: true, supportsScull: true, isCoxed: false };
+    case "pair":
+      return { supportsSweep: true, supportsScull: true, isCoxed: false };
+    case "single":
+      return { supportsSweep: false, supportsScull: true, isCoxed: false };
+    case "tinny":
+      return { supportsSweep: false, supportsScull: false, isCoxed: false };
+  }
 }
 
 function createEmptyForm(): BoatFormState {
   return {
     name: "",
-    boatType: "",
+    boatClass: "eight",
+    ...getSpecDefaults("eight"),
     category: "club",
     classification: "green",
     status: "available",
@@ -119,7 +125,10 @@ function createEmptyForm(): BoatFormState {
 function createFormFromBoat(boat: BoatWithRelations): BoatFormState {
   return {
     name: boat.name,
-    boatType: boat.boatType,
+    boatClass: boat.boatClass,
+    supportsSweep: boat.supportsSweep,
+    supportsScull: boat.supportsScull,
+    isCoxed: boat.isCoxed,
     category: boat.category,
     classification: boat.classification,
     status: boat.status,
@@ -128,10 +137,6 @@ function createFormFromBoat(boat: BoatWithRelations): BoatFormState {
     avgWeightKg: boat.avgWeightKg == null ? "" : String(boat.avgWeightKg),
     privateBoatAccessUserIds: boat.privateBoatAccessUserIds ?? [],
   };
-}
-
-function isPrivateLikeCategory(category: BoatWithRelations["category"]) {
-  return PRIVATE_LIKE_CATEGORIES.has(category);
 }
 
 export function BoatManagement({
@@ -145,16 +150,20 @@ export function BoatManagement({
 }) {
   const { toast } = useToast();
   const [managedBoats, setManagedBoats] = useState(sortBoats(boats));
-  const [weightDrafts, setWeightDrafts] = useState<Record<string, string>>(buildWeightDrafts(boats));
   const [expandedBoatId, setExpandedBoatId] = useState<string | null>(null);
   const [pendingActions, setPendingActions] = useState<Record<string, boolean>>({});
   const [dialogMode, setDialogMode] = useState<"create" | "edit" | null>(null);
   const [editingBoatId, setEditingBoatId] = useState<string | null>(null);
   const [formState, setFormState] = useState<BoatFormState>(createEmptyForm());
+  const [filters, setFilters] = useState<BoatFilters>({
+    boatClass: "all",
+    classification: "all",
+    category: "all",
+    coxed: "all",
+  });
 
   useEffect(() => {
     setManagedBoats(sortBoats(boats));
-    setWeightDrafts(buildWeightDrafts(boats));
   }, [boats]);
 
   const editingBoat = useMemo(
@@ -162,6 +171,26 @@ export function BoatManagement({
     [editingBoatId, managedBoats]
   );
   const formIsPrivateLike = isPrivateLikeCategory(formState.category);
+
+  const filteredBoats = useMemo(
+    () =>
+      managedBoats.filter((boat) => {
+        if (!matchesBoatClassFilter(boat, filters.boatClass)) {
+          return false;
+        }
+        if (!matchesClassificationFilter(boat, filters.classification)) {
+          return false;
+        }
+        if (!matchesCoxedFilter(boat, filters.coxed)) {
+          return false;
+        }
+        if (filters.category !== "all" && boat.category !== filters.category) {
+          return false;
+        }
+        return true;
+      }),
+    [filters, managedBoats]
+  );
 
   function setPending(key: string, pending: boolean) {
     setPendingActions((current) => {
@@ -189,7 +218,6 @@ export function BoatManagement({
     optimistic: (boat: BoatWithRelations) => BoatWithRelations;
     successTitle: string;
     errorTitle: string;
-    rollbackWeightDraft?: string;
   }) {
     const previousBoat = managedBoats.find((boat) => boat.id === args.boatId);
     if (!previousBoat) {
@@ -221,28 +249,15 @@ export function BoatManagement({
       setManagedBoats((current) =>
         sortBoats(
           current.map((boat) =>
-            boat.id === args.boatId ? normalizeBoat(data as BoatApiResponse, boat) : boat
+            boat.id === args.boatId ? normalizeBoat(data as BoatApiResponse) : boat
           )
         )
       );
-      setWeightDrafts((current) => ({
-        ...current,
-        [args.boatId]:
-          data.avgWeightKg === null || data.avgWeightKg === undefined
-            ? ""
-            : String(Number(data.avgWeightKg)),
-      }));
       toast({ title: args.successTitle });
     } catch (error) {
       setManagedBoats((current) =>
         sortBoats(current.map((boat) => (boat.id === args.boatId ? previousBoat : boat)))
       );
-      setWeightDrafts((current) => ({
-        ...current,
-        [args.boatId]:
-          args.rollbackWeightDraft ??
-          (previousBoat.avgWeightKg == null ? "" : String(previousBoat.avgWeightKg)),
-      }));
       toast({
         title: args.errorTitle,
         description: error instanceof Error ? error.message : "Unknown error",
@@ -318,29 +333,6 @@ export function BoatManagement({
     });
   }
 
-  async function saveWeight(boatId: string) {
-    const draft = weightDrafts[boatId]?.trim() ?? "";
-    if (draft !== "" && Number.isNaN(Number(draft))) {
-      toast({
-        title: "Invalid weight",
-        description: "Weight must be a number in kilograms.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const nextWeight = draft === "" ? null : Number(draft);
-    await mutateBoat({
-      boatId,
-      action: "weight",
-      payload: { avgWeightKg: nextWeight },
-      optimistic: (boat) => ({ ...boat, avgWeightKg: nextWeight }),
-      successTitle: "Boat weight updated",
-      errorTitle: "Failed to update boat weight",
-      rollbackWeightDraft: draft,
-    });
-  }
-
   function openCreateDialog() {
     setDialogMode("create");
     setEditingBoatId(null);
@@ -360,13 +352,30 @@ export function BoatManagement({
   }
 
   function updateForm<K extends keyof BoatFormState>(key: K, value: BoatFormState[K]) {
-    setFormState((current) => ({
-      ...current,
-      [key]: value,
-      ...(key === "category" && !isPrivateLikeCategory(value as BoatWithRelations["category"])
-        ? { ownerUserId: "", privateBoatAccessUserIds: [] }
-        : {}),
-    }));
+    setFormState((current) => {
+      if (key === "boatClass") {
+        const defaults = getSpecDefaults(value as BoatClass);
+        return {
+          ...current,
+          boatClass: value as BoatClass,
+          ...defaults,
+        };
+      }
+
+      if (key === "category" && !isPrivateLikeCategory(value as BoatWithRelations["category"])) {
+        return {
+          ...current,
+          [key]: value,
+          ownerUserId: "",
+          privateBoatAccessUserIds: [],
+        };
+      }
+
+      return {
+        ...current,
+        [key]: value,
+      };
+    });
   }
 
   function addFormAccessUser(userId: string) {
@@ -391,16 +400,10 @@ export function BoatManagement({
 
   async function saveBoatForm() {
     const name = formState.name.trim();
-    const boatType = formState.boatType.trim();
     const weightDraft = formState.avgWeightKg.trim();
 
     if (name.length === 0) {
       toast({ title: "Boat name is required", variant: "destructive" });
-      return;
-    }
-
-    if (boatType.length === 0) {
-      toast({ title: "Boat type is required", variant: "destructive" });
       return;
     }
 
@@ -413,9 +416,24 @@ export function BoatManagement({
       return;
     }
 
+    const normalizedSpec = normalizeBoatSpec({
+      boatClass: formState.boatClass,
+      supportsSweep: formState.supportsSweep,
+      supportsScull: formState.supportsScull,
+      isCoxed: formState.isCoxed,
+    });
+    const specError = validateBoatSpec(normalizedSpec);
+    if (specError) {
+      toast({ title: specError, variant: "destructive" });
+      return;
+    }
+
     const payload = {
       name,
-      boatType,
+      boatClass: normalizedSpec.boatClass,
+      supportsSweep: normalizedSpec.supportsSweep,
+      supportsScull: normalizedSpec.supportsScull,
+      isCoxed: normalizedSpec.isCoxed,
       category: formState.category,
       classification: formState.classification,
       status: formState.status,
@@ -450,26 +468,15 @@ export function BoatManagement({
       if (dialogMode === "create") {
         const createdBoat = normalizeBoat(data as BoatApiResponse);
         setManagedBoats((current) => sortBoats([...current, createdBoat]));
-        setWeightDrafts((current) => ({
-          ...current,
-          [createdBoat.id]: createdBoat.avgWeightKg == null ? "" : String(createdBoat.avgWeightKg),
-        }));
         toast({ title: "Boat created" });
       } else if (editingBoatId) {
         setManagedBoats((current) =>
           sortBoats(
             current.map((boat) =>
-              boat.id === editingBoatId ? normalizeBoat(data as BoatApiResponse, boat) : boat
+              boat.id === editingBoatId ? normalizeBoat(data as BoatApiResponse) : boat
             )
           )
         );
-        setWeightDrafts((current) => ({
-          ...current,
-          [editingBoatId]:
-            data.avgWeightKg === null || data.avgWeightKg === undefined
-              ? ""
-              : String(Number(data.avgWeightKg)),
-        }));
         toast({ title: "Boat updated" });
       }
 
@@ -506,11 +513,6 @@ export function BoatManagement({
       }
 
       setManagedBoats((current) => current.filter((entry) => entry.id !== boat.id));
-      setWeightDrafts((current) => {
-        const next = { ...current };
-        delete next[boat.id];
-        return next;
-      });
       if (expandedBoatId === boat.id) {
         setExpandedBoatId(null);
       }
@@ -533,6 +535,14 @@ export function BoatManagement({
   const selectedFormAccessUsers = users.filter((user) =>
     formState.privateBoatAccessUserIds.includes(user.id)
   );
+  const currentBoatTypeLabel = deriveBoatTypeLabel(
+    normalizeBoatSpec({
+      boatClass: formState.boatClass,
+      supportsSweep: formState.supportsSweep,
+      supportsScull: formState.supportsScull,
+      isCoxed: formState.isCoxed,
+    })
+  );
 
   return (
     <div className="space-y-3 mt-4">
@@ -549,12 +559,90 @@ export function BoatManagement({
         </Button>
       </div>
 
-      {managedBoats.map((boat) => {
+      <div className="grid gap-3 rounded-lg border bg-white p-3 md:grid-cols-4">
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Boat Type</label>
+          <select
+            className="mt-1 block w-full rounded-md border px-3 py-2 text-sm"
+            value={filters.boatClass}
+            onChange={(event) =>
+              setFilters((current) => ({
+                ...current,
+                boatClass: event.target.value as BoatClassFilter,
+              }))
+            }
+          >
+            {BOAT_CLASS_FILTER_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Classification</label>
+          <select
+            className="mt-1 block w-full rounded-md border px-3 py-2 text-sm"
+            value={filters.classification}
+            onChange={(event) =>
+              setFilters((current) => ({
+                ...current,
+                classification: event.target.value as BoatFilters["classification"],
+              }))
+            }
+          >
+            {CLASSIFICATION_FILTER_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Category</label>
+          <select
+            className="mt-1 block w-full rounded-md border px-3 py-2 text-sm"
+            value={filters.category}
+            onChange={(event) =>
+              setFilters((current) => ({
+                ...current,
+                category: event.target.value as CategoryFilter,
+              }))
+            }
+          >
+            {CATEGORY_FILTER_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Coxed</label>
+          <select
+            className="mt-1 block w-full rounded-md border px-3 py-2 text-sm"
+            value={filters.coxed}
+            onChange={(event) =>
+              setFilters((current) => ({
+                ...current,
+                coxed: event.target.value as CoxedFilter,
+              }))
+            }
+          >
+            {COXED_FILTER_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {filteredBoats.map((boat) => {
         const isExpanded = expandedBoatId === boat.id;
         const isPrivateLike = isPrivateLikeCategory(boat.category);
         const ownerSaving = isPending(`${boat.id}:owner`);
         const accessSaving = isPending(`${boat.id}:access`);
-        const weightSaving = isPending(`${boat.id}:weight`);
         const statusSaving = isPending(`${boat.id}:status`);
         const classificationSaving = isPending(`${boat.id}:classification`);
         const deleteSaving = isPending(`${boat.id}:delete`);
@@ -575,20 +663,22 @@ export function BoatManagement({
                       {isPrivateLike && <Lock className="inline h-3 w-3 ml-1 text-blue-500" />}
                     </div>
                     <div className="text-xs text-muted-foreground flex items-center gap-1 flex-wrap">
-                      <span>{boat.boatType}</span>
+                      <span>{boat.boatTypeLabel}</span>
+                      <span>—</span>
+                      <span>{getBoatCategoryLabel(boat.category)}</span>
+                      {boat.avgWeightKg != null && <span>— {boat.avgWeightKg}kg</span>}
                       <span>—</span>
                       <select
                         className="text-xs border rounded px-1 py-0.5 bg-transparent hover:bg-gray-50"
                         value={boat.responsibleSquadId ?? ""}
-                        onChange={(e) => updateResponsibleSquad(boat.id, e.target.value || null)}
-                        onClick={(e) => e.stopPropagation()}
+                        onChange={(event) => updateResponsibleSquad(boat.id, event.target.value || null)}
+                        onClick={(event) => event.stopPropagation()}
                       >
                         <option value="">{boat.responsiblePerson ?? "Unassigned"}</option>
-                        {squads.map((s) => (
-                          <option key={s.id} value={s.id}>{s.name}</option>
+                        {squads.map((squad) => (
+                          <option key={squad.id} value={squad.id}>{squad.name}</option>
                         ))}
                       </select>
-                      {boat.avgWeightKg != null && <span>— {boat.avgWeightKg}kg</span>}
                     </div>
                   </div>
                 </div>
@@ -652,35 +742,6 @@ export function BoatManagement({
                 </div>
               </div>
 
-              <div className="mt-3 flex flex-wrap items-end gap-2">
-                <div className="w-full max-w-[180px]">
-                  <label className="text-xs font-medium text-muted-foreground">Boat weight (kg)</label>
-                  <Input
-                    type="number"
-                    step="0.1"
-                    inputMode="decimal"
-                    value={weightDrafts[boat.id] ?? ""}
-                    onChange={(event) =>
-                      setWeightDrafts((current) => ({
-                        ...current,
-                        [boat.id]: event.target.value,
-                      }))
-                    }
-                    disabled={weightSaving}
-                    className="mt-1"
-                  />
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => saveWeight(boat.id)}
-                  disabled={weightSaving}
-                >
-                  {weightSaving && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
-                  Save Weight
-                </Button>
-              </div>
-
               {isExpanded && isPrivateLike && (
                 <PrivateBoatAccessPanel
                   boat={boat}
@@ -716,13 +777,70 @@ export function BoatManagement({
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground">Boat type</label>
-              <Input
-                className="mt-1"
-                value={formState.boatType}
-                onChange={(event) => updateForm("boatType", event.target.value)}
-                placeholder="e.g. 8+, 4x/4-/4+, 1x"
-              />
+              <select
+                className="mt-1 block w-full rounded-md border px-3 py-2 text-sm"
+                value={formState.boatClass}
+                onChange={(event) => updateForm("boatClass", event.target.value as BoatClass)}
+              >
+                {BOAT_CLASS_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-muted-foreground">Display label: {currentBoatTypeLabel}</p>
             </div>
+            {(formState.boatClass === "four" || formState.boatClass === "pair") && (
+              <div className="sm:col-span-2 space-y-2 rounded-lg border p-3">
+                <div>
+                  <span className="text-xs font-medium text-muted-foreground">Rigging options</span>
+                  <div className="mt-2 flex flex-wrap gap-4">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={formState.supportsScull}
+                        onChange={(event) => updateForm("supportsScull", event.target.checked)}
+                      />
+                      Scull riggers
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={formState.supportsSweep}
+                        onChange={(event) => updateForm("supportsSweep", event.target.checked)}
+                      />
+                      Sweep riggers
+                    </label>
+                  </div>
+                </div>
+
+                {formState.boatClass === "four" && (
+                  <div>
+                    <span className="text-xs font-medium text-muted-foreground">Crewing</span>
+                    <div className="mt-2 flex flex-wrap gap-4">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="radio"
+                          name="boat-coxed"
+                          checked={!formState.isCoxed}
+                          onChange={() => updateForm("isCoxed", false)}
+                        />
+                        Coxless
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="radio"
+                          name="boat-coxed"
+                          checked={formState.isCoxed}
+                          onChange={() => updateForm("isCoxed", true)}
+                        />
+                        Coxed
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <div>
               <label className="text-xs font-medium text-muted-foreground">Category</label>
               <select
@@ -732,9 +850,9 @@ export function BoatManagement({
                   updateForm("category", event.target.value as BoatWithRelations["category"])
                 }
               >
-                {CATEGORY_OPTIONS.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
+                {CATEGORY_FILTER_OPTIONS.filter((option) => option.value !== "all").map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
                   </option>
                 ))}
               </select>
@@ -766,9 +884,9 @@ export function BoatManagement({
                   )
                 }
               >
-                {CLASSIFICATION_OPTIONS.map((classification) => (
-                  <option key={classification} value={classification}>
-                    {classification}
+                {CLASSIFICATION_FILTER_OPTIONS.filter((option) => option.value !== "all").map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
                   </option>
                 ))}
               </select>
@@ -901,30 +1019,20 @@ function PrivateBoatAccessPanel({
     [accessUserIds, users]
   );
   const availableUsers = useMemo(
-    () => users.filter((user) => !accessUserIds.includes(user.id) && user.id !== boat.ownerUserId),
+    () =>
+      users.filter(
+        (user) => user.id !== boat.ownerUserId && !accessUserIds.includes(user.id)
+      ),
     [accessUserIds, boat.ownerUserId, users]
   );
 
-  function handleAddUser() {
-    if (!selectedUserId) {
-      return;
-    }
-
-    onUpdateAccess([...accessUserIds, selectedUserId]);
-    setSelectedUserId("");
-  }
-
-  function handleRemoveUser(userId: string) {
-    onUpdateAccess(accessUserIds.filter((id) => id !== userId));
-  }
-
   return (
-    <div className="mt-3 pt-3 border-t space-y-3">
+    <div className="mt-4 rounded-lg border bg-blue-50/50 p-3 space-y-3">
       <div>
-        <label className="text-xs font-medium text-muted-foreground">Owner</label>
-        <div className="mt-1 relative">
+        <div className="text-xs font-medium text-muted-foreground">Owner</div>
+        <div className="mt-2 flex gap-2 flex-wrap items-center">
           <select
-            className="block w-full text-sm border rounded-md px-2 py-1.5"
+            className="min-w-[220px] rounded-md border px-3 py-2 text-sm"
             value={boat.ownerUserId ?? ""}
             onChange={(event) => onUpdateOwner(event.target.value || null)}
             disabled={ownerSaving}
@@ -936,42 +1044,38 @@ function PrivateBoatAccessPanel({
               </option>
             ))}
           </select>
-          {ownerSaving && (
-            <Loader2 className="absolute right-2 top-2 h-4 w-4 animate-spin text-muted-foreground" />
-          )}
+          {ownerSaving && <Loader2 className="h-4 w-4 animate-spin text-blue-600" />}
         </div>
       </div>
 
       <div>
-        <label className="text-xs font-medium text-muted-foreground">
-          Allowed Users ({accessUsers.length})
-        </label>
-        {accessUsers.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-1">
-            {accessUsers.map((user) => (
-              <Badge key={user.id} variant="secondary" className="gap-1">
-                {user.fullName}
-                <button
-                  type="button"
-                  onClick={() => handleRemoveUser(user.id)}
-                  disabled={accessSaving}
-                  className="hover:text-red-600 disabled:opacity-50"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </Badge>
-            ))}
-          </div>
-        )}
-
-        <div className="flex gap-2 mt-2">
+        <div className="text-xs font-medium text-muted-foreground">Allowed users</div>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {accessUsers.length === 0 && (
+            <span className="text-xs text-muted-foreground">No extra users yet.</span>
+          )}
+          {accessUsers.map((user) => (
+            <Badge key={user.id} variant="secondary" className="gap-1 pr-1">
+              {user.fullName}
+              <button
+                type="button"
+                className="hover:text-red-600"
+                onClick={() => onUpdateAccess(accessUserIds.filter((entry) => entry !== user.id))}
+                disabled={accessSaving}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+        <div className="mt-3 flex gap-2 flex-wrap items-center">
           <select
-            className="flex-1 text-sm border rounded-md px-2 py-1.5"
+            className="min-w-[220px] rounded-md border px-3 py-2 text-sm"
             value={selectedUserId}
             onChange={(event) => setSelectedUserId(event.target.value)}
             disabled={accessSaving}
           >
-            <option value="">Select a member to add...</option>
+            <option value="">Select a member...</option>
             {availableUsers.map((user) => (
               <option key={user.id} value={user.id}>
                 {user.fullName} ({user.email})
@@ -979,12 +1083,17 @@ function PrivateBoatAccessPanel({
             ))}
           </select>
           <Button
+            variant="outline"
             size="sm"
-            onClick={handleAddUser}
+            onClick={() => {
+              if (!selectedUserId) return;
+              onUpdateAccess([...accessUserIds, selectedUserId]);
+              setSelectedUserId("");
+            }}
             disabled={!selectedUserId || accessSaving}
           >
-            {accessSaving && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
-            Add
+            {accessSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Add access
           </Button>
         </div>
       </div>

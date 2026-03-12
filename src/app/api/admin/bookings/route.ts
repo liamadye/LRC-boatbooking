@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requirePermission } from "@/lib/auth";
+import { deriveBoatTypeLabel } from "@/lib/boats";
 import { parseISO, startOfDay, endOfDay } from "date-fns";
 
 export async function GET(request: NextRequest) {
@@ -32,7 +33,15 @@ export async function GET(request: NextRequest) {
   const bookings = await prisma.booking.findMany({
     where,
     include: {
-      boat: { select: { name: true, boatType: true } },
+      boat: {
+        select: {
+          name: true,
+          boatClass: true,
+          supportsSweep: true,
+          supportsScull: true,
+          isCoxed: true,
+        },
+      },
       equipment: { select: { type: true, number: true } },
       oarSet: { select: { name: true } },
       user: { select: { fullName: true, email: true } },
@@ -41,5 +50,15 @@ export async function GET(request: NextRequest) {
     take: 200,
   });
 
-  return NextResponse.json(bookings);
+  return NextResponse.json(
+    bookings.map((booking) => ({
+      ...booking,
+      boat: booking.boat
+        ? {
+            name: booking.boat.name,
+            boatTypeLabel: deriveBoatTypeLabel(booking.boat),
+          }
+        : null,
+    }))
+  );
 }

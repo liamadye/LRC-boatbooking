@@ -25,7 +25,7 @@ export function BoatInfoDialog({
 
         <div className="space-y-3 text-sm">
           <div className="flex flex-wrap gap-2">
-            <Badge variant="outline">{boat.boatType}</Badge>
+            <Badge variant="outline">{boat.boatTypeLabel}</Badge>
             <Badge variant={boat.classification === "black" ? "secondary" : "outline"}>
               {boat.classification === "black" ? "Black" : "Green"}
             </Badge>
