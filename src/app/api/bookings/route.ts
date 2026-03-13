@@ -257,9 +257,8 @@ export async function POST(request: NextRequest) {
   }
 
   // Create booking
-  let booking;
   try {
-    booking = await prisma.booking.create({
+    const booking = await prisma.booking.create({
       data: {
         date: bookingDate,
         resourceType,
@@ -280,6 +279,8 @@ export async function POST(request: NextRequest) {
       },
       include: { squad: { select: { id: true, name: true } } },
     });
+
+    return NextResponse.json(serializeBooking(booking), { status: 201 });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return NextResponse.json(
@@ -296,8 +297,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    throw error;
+    console.error("Failed to create booking:", error);
+    return NextResponse.json(
+      { error: "An unexpected error occurred while creating the booking." },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json(serializeBooking(booking), { status: 201 });
 }

@@ -238,9 +238,8 @@ export async function PATCH(
     nextBookerName = user.fullName;
   }
 
-  let updatedBooking;
   try {
-    updatedBooking = await prisma.booking.update({
+    const updatedBooking = await prisma.booking.update({
       where: { id },
       data: {
         squadId: nextSquadId,
@@ -255,6 +254,8 @@ export async function PATCH(
       },
       include: { squad: { select: { id: true, name: true } } },
     });
+
+    return NextResponse.json(serializeBooking(updatedBooking));
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return NextResponse.json(
@@ -271,8 +272,10 @@ export async function PATCH(
       );
     }
 
-    throw error;
+    console.error("Failed to update booking:", error);
+    return NextResponse.json(
+      { error: "An unexpected error occurred while updating the booking." },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json(serializeBooking(updatedBooking));
 }
