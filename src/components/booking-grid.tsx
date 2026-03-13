@@ -23,6 +23,7 @@ import {
 import { cn } from "@/lib/utils";
 import { TIME_SLOTS, SECTION_COLORS } from "@/lib/constants";
 import { MobileBookingView } from "@/components/mobile-booking-view";
+import { SlotFirstMobileView } from "@/components/slot-first-mobile-view";
 import { ChevronDown, ChevronRight, Circle, Lock, Ban, RefreshCw, Loader2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import type {
@@ -261,28 +262,55 @@ export function BookingGrid({
         />
       )}
 
-      {/* Mobile view */}
-      <MobileBookingView
-        tab={tab}
-        boats={boats}
-        equipment={equipment}
-        oarSets={oarSets}
-        user={user}
-        getBookings={getBookings}
-        onBookingClick={(booking) => setSelectedBooking(booking)}
-        onSlotClick={(type, id, name, slot, options) =>
-          setBookingTarget({
-            resourceType: type,
-            resourceId: id,
-            resourceName: name,
-            slot,
-            initialEndSlot: options?.initialEndSlot,
-            initialStartMinutes: options?.initialStartMinutes,
-            initialEndMinutes: options?.initialEndMinutes,
-          })
-        }
-        onBoatInfoClick={(boat) => setSelectedBoat(boat)}
-      />
+      {/* Mobile portrait: slot-first card view */}
+      <div className="md:hidden portrait:block landscape:hidden">
+        <SlotFirstMobileView
+          tab={tab}
+          boats={boats}
+          equipment={equipment}
+          oarSets={oarSets}
+          user={user}
+          getBookings={getBookings}
+          onBookingClick={(booking) => setSelectedBooking(booking)}
+          onSlotClick={(type, id, name, slot, options) =>
+            setBookingTarget({
+              resourceType: type,
+              resourceId: id,
+              resourceName: name,
+              slot,
+              initialEndSlot: options?.initialEndSlot,
+              initialStartMinutes: options?.initialStartMinutes,
+              initialEndMinutes: options?.initialEndMinutes,
+            })
+          }
+          onBoatInfoClick={(boat) => setSelectedBoat(boat)}
+        />
+      </div>
+
+      {/* Mobile landscape: table view (same as before) */}
+      <div className="md:hidden portrait:hidden landscape:block">
+        <MobileBookingView
+          tab={tab}
+          boats={boats}
+          equipment={equipment}
+          oarSets={oarSets}
+          user={user}
+          getBookings={getBookings}
+          onBookingClick={(booking) => setSelectedBooking(booking)}
+          onSlotClick={(type, id, name, slot, options) =>
+            setBookingTarget({
+              resourceType: type,
+              resourceId: id,
+              resourceName: name,
+              slot,
+              initialEndSlot: options?.initialEndSlot,
+              initialStartMinutes: options?.initialStartMinutes,
+              initialEndMinutes: options?.initialEndMinutes,
+            })
+          }
+          onBoatInfoClick={(boat) => setSelectedBoat(boat)}
+        />
+      </div>
 
       {tab === "shells" && (
         <div className="hidden md:flex md:flex-wrap md:items-end md:gap-3">
