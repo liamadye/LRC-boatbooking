@@ -492,7 +492,7 @@ export function BookingModal({
   return (
     <Dialog open onOpenChange={() => onClose()}>
       <DialogContent
-        className="max-w-md w-[calc(100%-2rem)] mx-auto"
+        className="max-w-md w-[calc(100%-2rem)] mx-auto max-h-[calc(100dvh-2rem)] overflow-y-auto p-4 sm:p-6 gap-3 sm:gap-4"
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
         <DialogHeader>
@@ -502,7 +502,7 @@ export function BookingModal({
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
           <div className="text-sm text-muted-foreground">
             {selectedDate} — Slot: {slotLabel}
             {boat && (
