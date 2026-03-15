@@ -215,7 +215,7 @@ export function MobileBookingView({
   }, [filters, resourceRows, showFilterBar]);
 
   return (
-    <div className="space-y-4 md:hidden">
+    <div className="space-y-4">
       {showFilterBar && (
         <>
           <button
