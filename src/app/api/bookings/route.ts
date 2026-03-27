@@ -98,17 +98,6 @@ export async function POST(request: NextRequest) {
     notes,
   } = body;
 
-  // Fetch user profile
-  const user = await prisma.user.findUnique({
-    where: { email: authUser.email! },
-    include: { squads: { include: { squad: true } } },
-  });
-
-  if (!user) {
-    return NextResponse.json({ error: "User profile not found" }, { status: 404 });
-  }
-
-  // Check booking window (if configured for this week)
   const bookingDate = parseISO(date);
   const requestedStartMinutes =
     typeof startMinutes === "number" ? startMinutes : getDefaultStartMinutes(startSlot);
@@ -122,10 +111,30 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Fetch user profile, booking window, and resource details in parallel
   const weekStart = startOfWeek(bookingDate, { weekStartsOn: 1 });
-  const bookingWeek = await prisma.bookingWeek.findUnique({
-    where: { weekStart },
-  });
+
+  const [user, bookingWeek, resourceResult] = await Promise.all([
+    prisma.user.findUnique({
+      where: { email: authUser.email! },
+      include: { squads: { include: { squad: true } } },
+    }),
+    prisma.bookingWeek.findUnique({ where: { weekStart } }),
+    resourceType === "boat"
+      ? prisma.boat.findUnique({
+          where: { id: resourceId },
+          include: { privateBoatAccess: { select: { userId: true } } },
+        })
+      : resourceType === "equipment"
+        ? prisma.equipment.findUnique({ where: { id: resourceId } })
+        : resourceType === "oar_set"
+          ? prisma.oarSet.findUnique({ where: { id: resourceId } })
+          : null,
+  ]);
+
+  if (!user) {
+    return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+  }
 
   if (bookingWeek) {
     const now = new Date();
@@ -145,30 +154,22 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Fetch resource details for validation
+  // Extract typed resource results
   let boat = null;
   let equipmentItem = null;
 
   if (resourceType === "boat") {
-    boat = await prisma.boat.findUnique({
-      where: { id: resourceId },
-      include: { privateBoatAccess: { select: { userId: true } } },
-    });
+    boat = resourceResult as Awaited<ReturnType<typeof prisma.boat.findUnique<{ where: { id: string }; include: { privateBoatAccess: { select: { userId: true } } } }>>>;
     if (!boat) {
       return NextResponse.json({ error: "Boat not found" }, { status: 404 });
     }
   } else if (resourceType === "equipment") {
-    equipmentItem = await prisma.equipment.findUnique({
-      where: { id: resourceId },
-    });
+    equipmentItem = resourceResult as Awaited<ReturnType<typeof prisma.equipment.findUnique>>;
     if (!equipmentItem) {
       return NextResponse.json({ error: "Equipment not found" }, { status: 404 });
     }
   } else if (resourceType === "oar_set") {
-    const oarSet = await prisma.oarSet.findUnique({
-      where: { id: resourceId },
-    });
-    if (!oarSet) {
+    if (!resourceResult) {
       return NextResponse.json({ error: "Oar set not found" }, { status: 404 });
     }
   }
