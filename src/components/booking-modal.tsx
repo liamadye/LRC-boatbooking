@@ -33,6 +33,7 @@ type BookingTarget = {
   resourceId: string;
   resourceName: string;
   slot: number;
+  equipmentType?: "erg" | "bike" | "gym";
   initialEndSlot?: number;
   initialStartMinutes?: number;
   initialEndMinutes?: number;
@@ -606,7 +607,7 @@ export function BookingModal({
               className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-base"
               value={endSlot}
               onChange={(e) => setEndSlot(parseInt(e.target.value))}
-              disabled={isEditing}
+              disabled={isEditing || target.equipmentType === "erg"}
             >
               {TIME_SLOTS.filter((ts) => ts.slot >= target.slot).map((ts) => (
                 <option key={ts.slot} value={ts.slot}>
@@ -615,6 +616,9 @@ export function BookingModal({
                 </option>
               ))}
             </select>
+            {target.equipmentType === "erg" && (
+              <p className="text-xs text-muted-foreground mt-1">Ergs can only be booked for one slot</p>
+            )}
           </div>
 
           {(showDaytimeStartSelector || showDaytimeEndSelector) && (

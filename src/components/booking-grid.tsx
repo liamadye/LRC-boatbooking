@@ -65,6 +65,7 @@ type BookingTarget = {
   resourceId: string;
   resourceName: string;
   slot: number;
+  equipmentType?: "erg" | "bike" | "gym";
   initialEndSlot?: number;
   initialStartMinutes?: number;
   initialEndMinutes?: number;
@@ -228,6 +229,7 @@ export function BookingGrid({
     resourceName: string,
     slot: number,
     options?: {
+      equipmentType?: "erg" | "bike" | "gym";
       initialEndSlot?: number;
       initialStartMinutes?: number;
       initialEndMinutes?: number;
@@ -246,7 +248,8 @@ export function BookingGrid({
       resourceId,
       resourceName,
       slot,
-      initialEndSlot: options?.initialEndSlot,
+      equipmentType: options?.equipmentType,
+      initialEndSlot: options?.equipmentType === "erg" ? slot : options?.initialEndSlot,
       initialStartMinutes: options?.initialStartMinutes,
       initialEndMinutes: options?.initialEndMinutes,
     });
@@ -514,6 +517,7 @@ export function BookingGrid({
                     name={`Erg ${e.number}`}
                     subtitle="ONE SLOT ONLY"
                     resourceType="equipment"
+                    equipmentType="erg"
                     colorClass={SECTION_COLORS.equipment}
                   getBookings={getBookings}
                   onCellClick={handleCellClick}
@@ -748,6 +752,7 @@ const ResourceRow = memo(function ResourceRow({
   name,
   subtitle,
   resourceType,
+  equipmentType,
   colorClass,
   getBookings,
   onCellClick,
@@ -758,6 +763,7 @@ const ResourceRow = memo(function ResourceRow({
   name: string;
   subtitle?: string;
   resourceType: "equipment" | "oar_set";
+  equipmentType?: "erg" | "bike" | "gym";
   colorClass: string;
   getBookings: (id: string, slot: number) => SerializedBooking[];
   onCellClick: (
@@ -766,6 +772,7 @@ const ResourceRow = memo(function ResourceRow({
     name: string,
     slot: number,
     options?: {
+      equipmentType?: "erg" | "bike" | "gym";
       initialEndSlot?: number;
       initialStartMinutes?: number;
       initialEndMinutes?: number;
@@ -795,7 +802,7 @@ const ResourceRow = memo(function ResourceRow({
             slot={ts.slot}
             currentUserId={currentUserId}
             onBookingClick={onBookingClick}
-            onAddClick={() => onCellClick(resourceType, id, name, ts.slot)}
+            onAddClick={() => onCellClick(resourceType, id, name, ts.slot, { equipmentType })}
           />
         );
       })}
