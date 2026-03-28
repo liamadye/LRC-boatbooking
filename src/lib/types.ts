@@ -128,3 +128,11 @@ export type UserProfile = {
   hasBlackBoatEligibility: boolean;
   squads: SquadSummary[];
 };
+
+export type ReferenceData = {
+  boats: BoatWithRelations[];
+  equipment: EquipmentItem[];
+  oarSets: OarSetItem[];
+  squads: SquadSummary[];
+  fetchedAt: string;
+};
