@@ -65,6 +65,7 @@ type BookingTarget = {
   resourceId: string;
   resourceName: string;
   slot: number;
+  equipmentType?: "erg" | "bike" | "gym";
   initialEndSlot?: number;
   initialStartMinutes?: number;
   initialEndMinutes?: number;
@@ -228,6 +229,7 @@ export function BookingGrid({
     resourceName: string,
     slot: number,
     options?: {
+      equipmentType?: "erg" | "bike" | "gym";
       initialEndSlot?: number;
       initialStartMinutes?: number;
       initialEndMinutes?: number;
@@ -246,7 +248,8 @@ export function BookingGrid({
       resourceId,
       resourceName,
       slot,
-      initialEndSlot: options?.initialEndSlot,
+      equipmentType: options?.equipmentType,
+      initialEndSlot: options?.equipmentType === "erg" ? slot : options?.initialEndSlot,
       initialStartMinutes: options?.initialStartMinutes,
       initialEndMinutes: options?.initialEndMinutes,
     });
@@ -263,7 +266,7 @@ export function BookingGrid({
       )}
 
       {/* Mobile portrait: slot-first card view */}
-      <div className="md:hidden portrait:block landscape:hidden">
+      <div className="lg:hidden portrait:block landscape:hidden">
         <SlotFirstMobileView
           tab={tab}
           boats={boats}
@@ -288,7 +291,7 @@ export function BookingGrid({
       </div>
 
       {/* Mobile landscape: table view (same as before) */}
-      <div className="md:hidden portrait:hidden landscape:block">
+      <div className="lg:hidden portrait:hidden landscape:block">
         <MobileBookingView
           tab={tab}
           boats={boats}
@@ -313,7 +316,7 @@ export function BookingGrid({
       </div>
 
       {tab === "shells" && (
-        <div className="hidden md:flex md:flex-wrap md:items-end md:gap-3">
+        <div className="hidden lg:flex lg:flex-wrap lg:items-end lg:gap-3">
           <div>
             <label className="text-xs font-medium text-muted-foreground">Boat Type</label>
             <select
@@ -386,7 +389,7 @@ export function BookingGrid({
       )}
 
       {/* Desktop view */}
-      <div className="overflow-auto rounded-lg border bg-white hidden md:block max-h-[calc(100dvh-260px)]">
+      <div className="overflow-auto rounded-lg border bg-white hidden lg:block max-h-[calc(100dvh-260px)]">
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-20">
             <tr className="border-b bg-gray-50">
@@ -514,6 +517,7 @@ export function BookingGrid({
                     name={`Erg ${e.number}`}
                     subtitle="ONE SLOT ONLY"
                     resourceType="equipment"
+                    equipmentType="erg"
                     colorClass={SECTION_COLORS.equipment}
                   getBookings={getBookings}
                   onCellClick={handleCellClick}
@@ -748,6 +752,7 @@ const ResourceRow = memo(function ResourceRow({
   name,
   subtitle,
   resourceType,
+  equipmentType,
   colorClass,
   getBookings,
   onCellClick,
@@ -758,6 +763,7 @@ const ResourceRow = memo(function ResourceRow({
   name: string;
   subtitle?: string;
   resourceType: "equipment" | "oar_set";
+  equipmentType?: "erg" | "bike" | "gym";
   colorClass: string;
   getBookings: (id: string, slot: number) => SerializedBooking[];
   onCellClick: (
@@ -766,6 +772,7 @@ const ResourceRow = memo(function ResourceRow({
     name: string,
     slot: number,
     options?: {
+      equipmentType?: "erg" | "bike" | "gym";
       initialEndSlot?: number;
       initialStartMinutes?: number;
       initialEndMinutes?: number;
@@ -795,7 +802,7 @@ const ResourceRow = memo(function ResourceRow({
             slot={ts.slot}
             currentUserId={currentUserId}
             onBookingClick={onBookingClick}
-            onAddClick={() => onCellClick(resourceType, id, name, ts.slot)}
+            onAddClick={() => onCellClick(resourceType, id, name, ts.slot, { equipmentType })}
           />
         );
       })}

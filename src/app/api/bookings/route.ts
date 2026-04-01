@@ -4,13 +4,25 @@ import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { validateBooking } from "@/lib/validation";
 import { isWeekend } from "@/lib/validation";
-import { bookingsOverlap, getDefaultEndMinutes, getDefaultStartMinutes } from "@/lib/booking-times";
+import { getDefaultEndMinutes, getDefaultStartMinutes } from "@/lib/booking-times";
 import { addDays, parseISO, startOfWeek, format } from "date-fns";
 import { createRateLimiter } from "@/lib/rate-limit";
 import {
   buildBookingWeekPayload,
   serializeBooking,
 } from "@/lib/booking-utils";
+
+// Module-level TTL cache — survives across requests on a warm function instance.
+// Avoids re-fetching rarely-changing data (user profile, booking window, resource)
+// on every booking submission.
+const _ttlCache = new Map<string, { v: unknown; exp: number }>();
+async function withCache<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
+  const hit = _ttlCache.get(key);
+  if (hit && hit.exp > Date.now()) return hit.v as T;
+  const v = await fn();
+  _ttlCache.set(key, { v, exp: Date.now() + ttlMs });
+  return v;
+}
 
 const bookingLimiter = createRateLimiter({ windowMs: 60_000, maxRequests: 20 });
 
@@ -98,17 +110,6 @@ export async function POST(request: NextRequest) {
     notes,
   } = body;
 
-  // Fetch user profile
-  const user = await prisma.user.findUnique({
-    where: { email: authUser.email! },
-    include: { squads: { include: { squad: true } } },
-  });
-
-  if (!user) {
-    return NextResponse.json({ error: "User profile not found" }, { status: 404 });
-  }
-
-  // Check booking window (if configured for this week)
   const bookingDate = parseISO(date);
   const requestedStartMinutes =
     typeof startMinutes === "number" ? startMinutes : getDefaultStartMinutes(startSlot);
@@ -122,10 +123,42 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Fetch user profile, booking window, and resource details in parallel.
+  // Results are cached for the lifetime of a warm function instance to avoid
+  // redundant DB round trips on rapid submissions (e.g. race-day flurry of bookings).
   const weekStart = startOfWeek(bookingDate, { weekStartsOn: 1 });
-  const bookingWeek = await prisma.bookingWeek.findUnique({
-    where: { weekStart },
-  });
+
+  const [user, bookingWeek, resourceResult] = await Promise.all([
+    withCache(`user:${authUser.id}`, 30_000, () =>
+      prisma.user.findUnique({
+        where: { email: authUser.email! },
+        include: { squads: { include: { squad: true } } },
+      })
+    ),
+    withCache(`booking-week:${weekStart.toISOString()}`, 60_000, () =>
+      prisma.bookingWeek.findUnique({ where: { weekStart } })
+    ),
+    resourceType === "boat"
+      ? withCache(`boat:${resourceId}`, 60_000, () =>
+          prisma.boat.findUnique({
+            where: { id: resourceId },
+            include: { privateBoatAccess: { select: { userId: true } } },
+          })
+        )
+      : resourceType === "equipment"
+        ? withCache(`equipment:${resourceId}`, 60_000, () =>
+            prisma.equipment.findUnique({ where: { id: resourceId } })
+          )
+        : resourceType === "oar_set"
+          ? withCache(`oar-set:${resourceId}`, 60_000, () =>
+              prisma.oarSet.findUnique({ where: { id: resourceId } })
+            )
+          : Promise.resolve(null),
+  ]);
+
+  if (!user) {
+    return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+  }
 
   if (bookingWeek) {
     const now = new Date();
@@ -145,30 +178,22 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Fetch resource details for validation
+  // Extract typed resource results
   let boat = null;
   let equipmentItem = null;
 
   if (resourceType === "boat") {
-    boat = await prisma.boat.findUnique({
-      where: { id: resourceId },
-      include: { privateBoatAccess: { select: { userId: true } } },
-    });
+    boat = resourceResult as Awaited<ReturnType<typeof prisma.boat.findUnique<{ where: { id: string }; include: { privateBoatAccess: { select: { userId: true } } } }>>>;
     if (!boat) {
       return NextResponse.json({ error: "Boat not found" }, { status: 404 });
     }
   } else if (resourceType === "equipment") {
-    equipmentItem = await prisma.equipment.findUnique({
-      where: { id: resourceId },
-    });
+    equipmentItem = resourceResult as Awaited<ReturnType<typeof prisma.equipment.findUnique>>;
     if (!equipmentItem) {
       return NextResponse.json({ error: "Equipment not found" }, { status: 404 });
     }
   } else if (resourceType === "oar_set") {
-    const oarSet = await prisma.oarSet.findUnique({
-      where: { id: resourceId },
-    });
-    if (!oarSet) {
+    if (!resourceResult) {
       return NextResponse.json({ error: "Oar set not found" }, { status: 404 });
     }
   }
@@ -224,31 +249,33 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ errors: validationErrors }, { status: 400 });
   }
 
-  // Check for conflicts (double booking) — single range overlap query
-  const conflictWhere: Record<string, unknown> = { date: bookingDate };
-  if (resourceType === "boat") conflictWhere.boatId = resourceId;
-  else if (resourceType === "equipment") conflictWhere.equipmentId = resourceId;
-  else if (resourceType === "oar_set") conflictWhere.oarSetId = resourceId;
+  // Check for conflicts using a DB-level range overlap query.
+  // Two time ranges [a, b) and [c, d) overlap when a < d AND c < b.
+  // This catches bookings made between page load and form submission.
+  const resourceConflictFilter =
+    resourceType === "boat"
+      ? { boatId: resourceId }
+      : resourceType === "equipment"
+        ? { equipmentId: resourceId }
+        : { oarSetId: resourceId };
 
-  const conflictCandidates = await prisma.booking.findMany({ where: conflictWhere });
-  const conflict = conflictCandidates.find((existing) =>
-    bookingsOverlap(
-      {
-        startSlot,
-        endSlot,
-        startMinutes: requestedStartMinutes,
-        endMinutes: requestedEndMinutes,
-      },
-      existing
-    )
-  );
+  const conflict = await prisma.booking.findFirst({
+    where: {
+      date: bookingDate,
+      ...resourceConflictFilter,
+      startMinutes: { lt: requestedEndMinutes },
+      endMinutes: { gt: requestedStartMinutes },
+    },
+    select: { bookerName: true },
+  });
+
   if (conflict) {
     return NextResponse.json(
       {
         errors: [
           {
             field: "slot",
-            message: `This time slot overlaps with a booking by ${conflict.bookerName}.`,
+            message: `This time slot overlaps with an existing booking by ${conflict.bookerName}.`,
           },
         ],
       },
@@ -289,7 +316,7 @@ export async function POST(request: NextRequest) {
             {
               field: "slot",
               message:
-                "This environment is still enforcing an old single-booking rule for this slot. Apply the precise booking-time migration before allowing multiple daytime bookings.",
+                "This slot was just booked by someone else. Please refresh and choose another time.",
             },
           ],
         },

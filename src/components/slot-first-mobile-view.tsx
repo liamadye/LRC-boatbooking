@@ -85,7 +85,7 @@ export function SlotFirstMobileView({
   onSlotClick,
   onBoatInfoClick,
 }: Props) {
-  const [selectedSlot, setSelectedSlot] = useState(7); // Default to daytime slot
+  const [selectedSlot, setSelectedSlot] = useState(2); // Default to 5:30am slot
   const [filters, setFilters] = useState<MobileFilters>({
     boatClass: "all",
     classification: "all",
