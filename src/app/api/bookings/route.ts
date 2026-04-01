@@ -4,13 +4,25 @@ import { prisma } from "@/lib/prisma";
 import { createClient } from "@/lib/supabase/server";
 import { validateBooking } from "@/lib/validation";
 import { isWeekend } from "@/lib/validation";
-import { bookingsOverlap, getDefaultEndMinutes, getDefaultStartMinutes } from "@/lib/booking-times";
+import { getDefaultEndMinutes, getDefaultStartMinutes } from "@/lib/booking-times";
 import { addDays, parseISO, startOfWeek, format } from "date-fns";
 import { createRateLimiter } from "@/lib/rate-limit";
 import {
   buildBookingWeekPayload,
   serializeBooking,
 } from "@/lib/booking-utils";
+
+// Module-level TTL cache — survives across requests on a warm function instance.
+// Avoids re-fetching rarely-changing data (user profile, booking window, resource)
+// on every booking submission.
+const _ttlCache = new Map<string, { v: unknown; exp: number }>();
+async function withCache<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
+  const hit = _ttlCache.get(key);
+  if (hit && hit.exp > Date.now()) return hit.v as T;
+  const v = await fn();
+  _ttlCache.set(key, { v, exp: Date.now() + ttlMs });
+  return v;
+}
 
 const bookingLimiter = createRateLimiter({ windowMs: 60_000, maxRequests: 20 });
 
@@ -111,25 +123,37 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Fetch user profile, booking window, and resource details in parallel
+  // Fetch user profile, booking window, and resource details in parallel.
+  // Results are cached for the lifetime of a warm function instance to avoid
+  // redundant DB round trips on rapid submissions (e.g. race-day flurry of bookings).
   const weekStart = startOfWeek(bookingDate, { weekStartsOn: 1 });
 
   const [user, bookingWeek, resourceResult] = await Promise.all([
-    prisma.user.findUnique({
-      where: { email: authUser.email! },
-      include: { squads: { include: { squad: true } } },
-    }),
-    prisma.bookingWeek.findUnique({ where: { weekStart } }),
+    withCache(`user:${authUser.id}`, 30_000, () =>
+      prisma.user.findUnique({
+        where: { email: authUser.email! },
+        include: { squads: { include: { squad: true } } },
+      })
+    ),
+    withCache(`booking-week:${weekStart.toISOString()}`, 60_000, () =>
+      prisma.bookingWeek.findUnique({ where: { weekStart } })
+    ),
     resourceType === "boat"
-      ? prisma.boat.findUnique({
-          where: { id: resourceId },
-          include: { privateBoatAccess: { select: { userId: true } } },
-        })
+      ? withCache(`boat:${resourceId}`, 60_000, () =>
+          prisma.boat.findUnique({
+            where: { id: resourceId },
+            include: { privateBoatAccess: { select: { userId: true } } },
+          })
+        )
       : resourceType === "equipment"
-        ? prisma.equipment.findUnique({ where: { id: resourceId } })
+        ? withCache(`equipment:${resourceId}`, 60_000, () =>
+            prisma.equipment.findUnique({ where: { id: resourceId } })
+          )
         : resourceType === "oar_set"
-          ? prisma.oarSet.findUnique({ where: { id: resourceId } })
-          : null,
+          ? withCache(`oar-set:${resourceId}`, 60_000, () =>
+              prisma.oarSet.findUnique({ where: { id: resourceId } })
+            )
+          : Promise.resolve(null),
   ]);
 
   if (!user) {
@@ -225,31 +249,33 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ errors: validationErrors }, { status: 400 });
   }
 
-  // Check for conflicts (double booking) — single range overlap query
-  const conflictWhere: Record<string, unknown> = { date: bookingDate };
-  if (resourceType === "boat") conflictWhere.boatId = resourceId;
-  else if (resourceType === "equipment") conflictWhere.equipmentId = resourceId;
-  else if (resourceType === "oar_set") conflictWhere.oarSetId = resourceId;
+  // Check for conflicts using a DB-level range overlap query.
+  // Two time ranges [a, b) and [c, d) overlap when a < d AND c < b.
+  // This catches bookings made between page load and form submission.
+  const resourceConflictFilter =
+    resourceType === "boat"
+      ? { boatId: resourceId }
+      : resourceType === "equipment"
+        ? { equipmentId: resourceId }
+        : { oarSetId: resourceId };
 
-  const conflictCandidates = await prisma.booking.findMany({ where: conflictWhere });
-  const conflict = conflictCandidates.find((existing) =>
-    bookingsOverlap(
-      {
-        startSlot,
-        endSlot,
-        startMinutes: requestedStartMinutes,
-        endMinutes: requestedEndMinutes,
-      },
-      existing
-    )
-  );
+  const conflict = await prisma.booking.findFirst({
+    where: {
+      date: bookingDate,
+      ...resourceConflictFilter,
+      startMinutes: { lt: requestedEndMinutes },
+      endMinutes: { gt: requestedStartMinutes },
+    },
+    select: { bookerName: true },
+  });
+
   if (conflict) {
     return NextResponse.json(
       {
         errors: [
           {
             field: "slot",
-            message: `This time slot overlaps with a booking by ${conflict.bookerName}.`,
+            message: `This time slot overlaps with an existing booking by ${conflict.bookerName}.`,
           },
         ],
       },
@@ -290,7 +316,7 @@ export async function POST(request: NextRequest) {
             {
               field: "slot",
               message:
-                "This environment is still enforcing an old single-booking rule for this slot. Apply the precise booking-time migration before allowing multiple daytime bookings.",
+                "This slot was just booked by someone else. Please refresh and choose another time.",
             },
           ],
         },
