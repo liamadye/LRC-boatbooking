@@ -25,6 +25,8 @@ import {
   supportsSquadBooking,
 } from "@/lib/boats";
 
+import { parseISO } from "date-fns";
+import { validateBooking, isWeekend } from "@/lib/validation";
 import { useToast } from "@/hooks/use-toast";
 import type { BoatWithRelations, SerializedBooking, UserProfile } from "@/lib/types";
 
@@ -329,14 +331,15 @@ export function BookingModal({
   async function handleCreateInBackground(payload: BookingPayload) {
     const optimisticBooking = buildOptimisticBooking(payload);
     onCreatePending?.(optimisticBooking);
-
-    const pendingToast = toast({
-      title: "Processing booking",
-      description: `${target.resourceName} is being booked.`,
-      duration: 20000,
-    });
-
     onClose();
+
+    // Show success immediately — the booking already appears in the grid.
+    // The server confirms in the background; if it rejects (e.g. someone
+    // grabbed the slot in the last few seconds) we roll back with an error.
+    toast({
+      title: "Booking created",
+      description: `${target.resourceName} booked successfully.`,
+    });
 
     try {
       const res = await fetch("/api/bookings", {
@@ -357,16 +360,15 @@ export function BookingModal({
       } catch {
         data = null;
       }
-      pendingToast.dismiss();
 
       if (!res.ok) {
         onCreateResolved?.(optimisticBooking.id, null);
         const fallback =
           res.status === 409
-            ? "This time slot is already booked."
+            ? "This time slot was just taken by someone else."
             : "Failed to create booking.";
         toast({
-          title: "Booking failed",
+          title: "Booking failed — please try again",
           description: getErrorMessage(data, fallback),
           variant: "destructive",
         });
@@ -378,15 +380,10 @@ export function BookingModal({
       } else {
         onSaved?.(data as SerializedBooking);
       }
-      toast({
-        title: "Booking created",
-        description: `${target.resourceName} booked successfully.`,
-      });
     } catch (error) {
-      pendingToast.dismiss();
       onCreateResolved?.(optimisticBooking.id, null);
       toast({
-        title: "Booking failed",
+        title: "Booking failed — please try again",
         description:
           error instanceof Error
             ? error.message
@@ -407,6 +404,38 @@ export function BookingModal({
     const submission = buildPayload();
     if ("errors" in submission) {
       setErrors(submission.errors);
+      return;
+    }
+
+    // Validate permissions and business rules using data already loaded on the
+    // client — no server round trip needed for these checks.
+    const clientErrors = validateBooking({
+      boatClass: boat?.boatClass,
+      boatSupportsSweep: boat?.supportsSweep,
+      boatSupportsScull: boat?.supportsScull,
+      boatIsCoxed: boat?.isCoxed,
+      boatTypeLabel: boat?.boatTypeLabel,
+      boatClassification: boat?.classification,
+      boatCategory: boat?.category,
+      boatStatus: boat?.status,
+      boatAvgWeightKg: boat?.avgWeightKg ?? null,
+      boatOwnerUserId: boat?.ownerUserId ?? null,
+      privateBoatAccessUserIds: boat?.privateBoatAccessUserIds ?? [],
+      isOutside: boat?.isOutside,
+      crewCount: effectiveCrew,
+      crewAvgWeightKg: user.weightKg,
+      startSlot: target.slot,
+      endSlot: submission.payload.endSlot,
+      userId: user.id,
+      userRole: user.role,
+      userMemberType: user.memberType,
+      userHasBlackBoatEligibility: user.hasBlackBoatEligibility,
+      isWeekend: isWeekend(parseISO(selectedDate)),
+      isRaceSpecific: submission.payload.isRaceSpecific,
+      equipmentType: target.equipmentType,
+    });
+    if (clientErrors.length > 0) {
+      setErrors(clientErrors.map((e) => e.message));
       return;
     }
 
